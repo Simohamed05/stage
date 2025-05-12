@@ -1,117 +1,306 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from io import BytesIO
-from prophet import Prophet
 import numpy as np
-from sklearn.metrics import mean_absolute_error
-from statsmodels.tsa.arima.model import ARIMA
-from statsmodels.tools.sm_exceptions import ValueWarning
-import warnings
+from docx import Document
+from docx.shared import Inches, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from io import BytesIO
+import plotly.io as pio
+from PIL import Image
+
+# Cache expensive computations
+@st.cache_data
+def compute_monthly_costs(data):
+    monthly_data = data.groupby('Mois')['Montant'].sum().reset_index()
+    month_order = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                   'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+    monthly_data['Mois'] = pd.Categorical(monthly_data['Mois'], categories=month_order, ordered=True)
+    return monthly_data.sort_values('Mois')
+
+@st.cache_data
+def compute_category_breakdown(data):
+    return data.groupby('Desc_Cat')['Montant'].sum().reset_index()
+
+# Function to save Plotly figure as image
+def save_plotly_fig_as_image(fig):
+    img_bytes = pio.to_image(fig, format='png', width=800, height=350)
+    img = Image.open(BytesIO(img_bytes))
+    img_buffer = BytesIO()
+    img.save(img_buffer, format='PNG')
+    return img_buffer.getvalue()
+
+# Function to generate Word document
+def generate_word_report(engin_data, selected, figs, descriptions, metrics, predictions, budget_threshold):
+    doc = Document()
+    
+    # Title
+    title = doc.add_heading(f'Rapport d\'Analyse pour R1600-{selected.split("-")[-1]}', level=1)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph(f'Date du rapport : {pd.Timestamp.now().strftime("%d/%m/%Y")}')
+    
+    # Table of Contents
+    doc.add_heading('Tableau des Matières', level=2)
+    doc.add_paragraph('1. Introduction\n2. Résumé des Analyses\n3. Visualisations\n4. Indicateurs Clés\n5. Prévisions\n6. Recommandations', style='List Bullet')
+    
+    # Introduction
+    doc.add_heading('1. Introduction', level=2)
+    doc.add_paragraph(
+        'Ce rapport présente une analyse détaillée des coûts associés à l\'engin R1600, '
+        'incluant les visualisations, les indicateurs clés, les prévisions et les recommandations '
+        'pour optimiser la gestion des dépenses.'
+    )
+    
+    # Summary
+    doc.add_heading('2. Résumé des Analyses', level=2)
+    total_cost = engin_data['Montant'].sum()
+    top_category = engin_data.groupby('Desc_Cat')['Montant'].sum().idxmax()
+    trend = predictions.get('trend', 'Stable')
+    doc.add_paragraph(
+        f'Coût total : {total_cost:,.0f} MAD\n'
+        f'Catégorie principale : {top_category}\n'
+        f'Tendance récente : {trend}\n'
+        f'Nombre d\'interventions : {len(engin_data)}\n'
+        f'Coût médian : {engin_data["Montant"].median():,.0f} MAD'
+    )
+    
+    # Visualizations
+    doc.add_heading('3. Visualisations', level=2)
+    for i, (fig, desc, title) in enumerate(zip(figs, descriptions, [
+        'Évolution des Dépenses avec Projection', 'Distribution des Coûts', 
+        'Répartition par Catégorie', 'Coût Mensuel'
+    ])):
+        doc.add_heading(f'3.{i+1} {title}', level=3)
+        img_stream = BytesIO(save_plotly_fig_as_image(fig))
+        doc.add_picture(img_stream, width=Inches(6))
+        doc.add_paragraph(desc)
+    
+    # Key Metrics
+    doc.add_heading('4. Indicateurs Clés', level=2)
+    table = doc.add_table(rows=len(metrics) + 1, cols=2)
+    table.style = 'Table Grid'
+    hdr_cells = table.rows[0].cells
+    hdr_cells[0].text = 'Métrique'
+    hdr_cells[1].text = 'Valeur'
+    for i, (metric, value) in enumerate(metrics.items()):
+        row_cells = table.rows[i+1].cells
+        row_cells[0].text = metric
+        row_cells[1].text = str(value)
+    
+    # Predictions
+    doc.add_heading('5. Prévisions', level=2)
+    doc.add_paragraph(
+        f'Estimation moyenne : {predictions["avg"]:,.0f} MAD/mois\n'
+        f'Intervalle de confiance (95%) : {predictions["ci_lower"]:,.0f} - {predictions["ci_upper"]:,.0f} MAD\n'
+        f'Fiabilité : {predictions["reliability"]:.0f}%\n'
+        f'Tendance : {predictions["trend"]}'
+    )
+    
+    # Budget Threshold Analysis
+    if budget_threshold > 0:
+        high_costs = engin_data[engin_data['Montant'] > budget_threshold]
+        doc.add_heading('Analyse des Coûts Excédant le Seuil', level=3)
+        doc.add_paragraph(
+            f'Seuil défini : {budget_threshold:,.0f} MAD\n'
+            f'Nombre d\'interventions dépassant le seuil : {len(high_costs)}\n'
+            f'Coût total des interventions dépassant le seuil : {high_costs["Montant"].sum():,.0f} MAD'
+        )
+    
+    # Recommendations
+    doc.add_heading('6. Recommandations', level=2)
+    doc.add_paragraph(
+        'Sur la base des analyses, voici les recommandations :\n'
+        '- Prioriser la maintenance préventive pour réduire les coûts dans la catégorie principale.\n'
+        f'- Examiner les interventions coûteuses dans {top_category} pour identifier des alternatives économiques.\n'
+        '- Mettre en place un suivi mensuel pour détecter les tendances haussières tôt.\n'
+        '- Négocier avec les fournisseurs pour les pièces fréquemment utilisées.'
+    )
+    
+    # Save to buffer
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
 
 # Configuration de la page
 st.set_page_config(layout="wide", page_title="Analyse des Engins R1600")
 
-
 # Charger les données
 @st.cache_data
 def load_data():
-    df = pd.read_excel('engins2.xlsx', sheet_name='BASE DE DONNEE')
-    
-    # Nettoyage des données
-    df['Desc_CA'] = df['Desc_CA'].str.replace('', '').str.strip()
-    df['Desc_Cat'] = df['Desc_Cat'].str.strip()
-    df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
-    df['Date'] = pd.to_datetime(df['Date'])
-    
-    # Liste des engins spécifiques à analyser
-    engins_cibles = [
-        'CHARGEUSE CATERPILLAR 10T   R1600 Nｰ14 DS',
-        'CHARGEUSE CATERPILAR R 1600H Nｰ15 DS',
-        'Chargeuse CATERPILAR 10T  R1600 Nｰ16',
-        'Chargeuse Caterpillar 10T R1600 Nｰ17',
-        'Chargeuse  CAT    R1600 10T  Nｰ18',                
-        'CHARGEUSE CATERPILAR R 1600 Nｰ20',
-        'CHARGEUSE CATERPILAR R 1600 Nｰ21',
-        'CHARGEUSE CATERPILLARD R1600 Nｰ22',
-        'CHARGEUSE CATERPILLARD R1600 Nｰ23'
-    ]
-    
-    # Filtrer uniquement les engins cibles
-    df = df[df['Desc_CA'].isin(engins_cibles)].copy()
-    
-    # Extraire le numéro de l'engin et créer un nom standardisé
-    df['Numéro_Engin'] = df['Desc_CA'].str.extract(r'Nｰ(\d+)')
-    df['Engin_Formaté'] = 'R1600-' + df['Numéro_Engin']
-    
-    # Mois en français
-    months_fr = {
-        'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
-        'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
-        'July': 'Juillet', 'August': 'Août', 'September': 'Septembre',
-        'October': 'Octobre', 'November': 'Novembre', 'December': 'Décembre'
-    }
-    df['Mois'] = df['Date'].dt.month_name().map(months_fr)
-    
-    return df
+    try:
+        df = pd.read_excel('engins2.xlsx', sheet_name='BASE DE DONNEE')
+        
+        # Debug: Print column names
+        
+        # Vérifier si 'Montant' existe
+        if 'Montant' not in df.columns:
+            st.error("Erreur : La colonne 'Montant' est introuvable dans le fichier Excel. Colonnes disponibles : " + str(df.columns.tolist()))
+            return None
+        
+        # Nettoyage des données
+        df['Desc_CA'] = df['Desc_CA'].str.replace('', '').str.strip()
+        df['Desc_Cat'] = df['Desc_Cat'].str.strip()
+        df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        
+        # Liste des engins spécifiques à analyser
+        engins_cibles = [
+            'CHARGEUSE CATERPILLAR 10T   R1600 Nｰ14 DS',
+            'CHARGEUSE CATERPILAR R 1600H Nｰ15 DS',
+            'Chargeuse CATERPILAR 10T  R1600 Nｰ16',
+            'Chargeuse Caterpillar 10T R1600 Nｰ17',
+            'Chargeuse  CAT    R1600 10T  Nｰ18',                
+            'CHARGEUSE CATERPILAR R 1600 Nｰ20',
+            'CHARGEUSE CATERPILAR R 1600 Nｰ21',
+            'CHARGEUSE CATERPILLARD R1600 Nｰ22',
+            'CHARGEUSE CATERPILLARD R1600 Nｰ23'
+        ]
+        
+        # Filtrer uniquement les engins cibles
+        df = df[df['Desc_CA'].isin(engins_cibles)].copy()
+        
+        # Extraire le numéro de l'engin et créer un nom standardisé
+        df['Numéro_Engin'] = df['Desc_CA'].str.extract(r'Nｰ(\d+)')
+        df['Engin_Formaté'] = 'R1600-' + df['Numéro_Engin']
+        
+        # Mois en français (conservé pour les analyses)
+        months_fr = {
+            'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
+            'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
+            'July': 'Juillet', 'August': 'Août', 'September': 'Septembre',
+            'October': 'Octobre', 'November': 'Novembre', 'December': 'Décembre'
+        }
+        df['Mois'] = df['Date'].dt.month_name().map(months_fr)
+        
+        return df
+    except Exception as e:
+        st.error(f"Erreur lors du chargement du fichier Excel : {str(e)}")
+        return None
 
 # Chargement des données
 df = load_data()
 
+# Vérifier si les données sont chargées
+if df is None or df.empty:
+    st.stop()
+
 # =============================================
 # SECTION 1 : EN-TÊTE AVEC KPI PRINCIPAUX
 # =============================================
-st.markdown("<h1 style='color:#F28C38;'>📊 Analyse des Engins R1600</h1>", unsafe_allow_html=True)
+st.markdown("""
+<div style='background-color:#e3f2fd; padding:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
+    <h1 style='color:#F28C38; text-align:center; margin-top:0;'>📊 Analyse des Engins R1600</h1>
+    <p style='color:#424242; text-align:center;'>Suivi des coûts et des interventions pour optimiser la gestion des chargeuses</p>
+</div>
+""", unsafe_allow_html=True)
 
-kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-with kpi1:
-    st.metric("Coût total", f"{df['Montant'].sum():,.0f} MAD", 
-             help="Somme totale des dépenses pour tous les engins")
-with kpi2:
-    top_engine = df.groupby('Engin_Formaté')['Montant'].sum().idxmax()
-    st.metric("Engin le plus coûteux", top_engine.split('-')[-1],
-             help="Numéro de l'engin avec le coût total le plus élevé")
-with kpi3:
-    top_category = df.groupby('Desc_Cat')['Montant'].sum().idxmax()
-    st.metric("Catégorie principale", top_category,
-             help="Catégorie de dépense la plus importante")
-with kpi4:
-    avg_cost = df['Montant'].mean()
-    st.metric("Coût moyen par intervention", f"{avg_cost:,.0f} MAD",
-             help="Moyenne des montants des interventions")
+kpi_container = st.container()
+with kpi_container:
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    with kpi1:
+        st.markdown(f"""
+        <div style='background-color:#fff8e1; padding:15px; border-radius:10px; text-align:center;'>
+            <h6 style='color:#F28C38; margin-bottom:10px;'>Coût total</h4>
+            <p style='color:#424242; font-size:18px; font-weight:bold;'>{df['Montant'].sum():,.0f} MAD</p>
+            <p style='color:#424242; font-size:12px;'>Somme totale des dépenses</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with kpi2:
+        top_engine = df.groupby('Engin_Formaté')['Montant'].sum().idxmax()
+        st.markdown(f"""
+        <div style='background-color:#e8f5e9; padding:15px; border-radius:10px; text-align:center;'>
+            <h6 style='color:#F28C38; margin-bottom:10px;'>Engin le plus coûteux</h4>
+            <p style='color:#424242; font-size:18px; font-weight:bold;'>{top_engine.split('-')[-1]}</p>
+            <p style='color:#424242; font-size:12px;'>Numéro de l'engin</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with kpi3:
+        top_category = df.groupby('Desc_Cat')['Montant'].sum().idxmax()
+        st.markdown(f"""
+        <div style='background-color:#f3e5f5; padding:15px; border-radius:10px; text-align:center;'>
+            <h6 style='color:#F28C38; margin-bottom:10px;'>Catégorie principale</h4>
+            <p style='color:#424242; font-size:18px; font-weight:bold;'>{top_category}</p>
+            <p style='color:#424242; font-size:12px;'>Dépense dominante</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with kpi4:
+        avg_cost = df['Montant'].mean()
+        st.markdown(f"""
+        <div style='background-color:#ffebee; padding:15px; border-radius:10px; text-align:center;'>                                                                                                      
+            <h6 style='color:#F28C38; margin-bottom:10px;'>Coût moyen</h4>
+            <p style='color:#424242; font-size:18px; font-weight:bold;'>{avg_cost:,.0f} MAD</p>
+            <p style='color:#424242; font-size:12px;'>Par intervention</p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # =============================================
 # SECTION 2 : FILTRES (SIDEBAR)
 # =============================================
-st.sidebar.markdown("<h2 style='color:#F28C38;'>🔍 Filtres</h2>", unsafe_allow_html=True)
-
-selected_engin = st.sidebar.radio(
-    'Sélectionner un engin',
-    ['Tous'] + sorted(df['Engin_Formaté'].unique().tolist()),
-    help="Filtrer par engin spécifique"
-)
-
-# Filtre par mois
-selected_month = st.sidebar.multiselect(
-    'Mois', 
-    options=sorted(df['Mois'].unique()),
-    default=sorted(df['Mois'].unique()),
-    help="Sélectionner un ou plusieurs mois"
-)
+with st.sidebar:
+    st.subheader("Filtres")
+    
+    selected_engin = st.radio(
+        'Sélectionner un engin',
+        ['Tous'] + sorted(df['Engin_Formaté'].unique().tolist()),
+        help="Filtrer par engin spécifique"
+    )
+    
+    # Sélecteur de plage de dates
+    st.subheader("Plage de dates")
+    
+    default_start = df['Date'].min().date()
+    default_end = df['Date'].max().date()
+    date_range = st.date_input(
+        "Période",
+        value=(default_start, default_end),
+        min_value=default_start,
+        max_value=default_end,
+        help="Choisissez une plage de dates pour filtrer les interventions"
+    )
+    
+    # Statistiques filtrées
+    filtered_data = df.copy()
+    if selected_engin != 'Tous':
+        filtered_data = filtered_data[filtered_data['Engin_Formaté'] == selected_engin]
+    if len(date_range) == 2:  # Vérifie qu'une plage complète est sélectionnée
+        start_date, end_date = date_range
+        filtered_data = filtered_data[(filtered_data['Date'].dt.date >= start_date) & 
+                                    (filtered_data['Date'].dt.date <= end_date)]
+    
+    # Debug: Vérifier les colonnes de filtered_data
+    
+    # Vérifier si 'Montant' existe dans filtered_data
+    if 'Montant' not in filtered_data.columns:
+        st.error("Erreur : La colonne 'Montant' est introuvable dans les données filtrées. Colonnes disponibles : " + str(filtered_data.columns.tolist()))
+    elif filtered_data.empty:
+        st.warning("Aucune donnée disponible après filtrage. Veuillez ajuster les filtres.")
+    else:
+        total_cost = filtered_data['Montant'].sum()
+        avg_cost = filtered_data['Montant'].mean()
+        num_interventions = len(filtered_data)
+        st.subheader("Statistiques")
+        st.metric("Consommation totale", f"{total_cost:,.0f} MAD")
+        st.metric("Nombre d'interventions", num_interventions)
+        st.metric("Coût moyen", f"{avg_cost:,.0f} MAD")
 
 # Appliquer les filtres
 filtered_data = df.copy()
 if selected_engin != 'Tous':
     filtered_data = filtered_data[filtered_data['Engin_Formaté'] == selected_engin]
+if len(date_range) == 2:
+    start_date, end_date = date_range
+    filtered_data = filtered_data[(filtered_data['Date'].dt.date >= start_date) & 
+                                (filtered_data['Date'].dt.date <= end_date)]
 
-if selected_month:
-    filtered_data = filtered_data[filtered_data['Mois'].isin(selected_month)]
-
-# Statistiques sidebar
-st.sidebar.markdown("<h2 style='color:#F28C38;'>📈 Statistiques filtres</h2>", unsafe_allow_html=True)
-st.sidebar.metric("Consommation totale", f"{filtered_data['Montant'].sum():,.0f} MAD")
-st.sidebar.metric("Nombre d'interventions", len(filtered_data))
-st.sidebar.metric("Coût moyen", f"{filtered_data['Montant'].mean():,.0f} MAD")
+# Vérifier si filtered_data est vide ou si 'Montant' est absent
+if filtered_data.empty:
+    st.warning("Aucune donnée disponible après filtrage. Veuillez ajuster les filtres.")
+    st.stop()
+if 'Montant' not in filtered_data.columns:
+    st.error("Erreur : La colonne 'Montant' est introuvable après filtrage. Colonnes disponibles : " + str(filtered_data.columns.tolist()))
+    st.stop()
 
 # =============================================
 # SECTION 3 : ONGLETS PRINCIPAUX
@@ -120,13 +309,14 @@ tab1, tab2, tab3, tab4 = st.tabs(["📋 Données", "📊 Analyse", "🔄 Compara
 
 # Onglet 1 : Données
 with tab1:
-    st.markdown("<h2 style='color:#F28C38;'>Données détaillées des consommations</h2>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style='background-color:#e8f5e9; padding:20px; border-radius:10px; border-left:5px solid #388e3c; margin-bottom:20px;'>
+        <h2 style='color:#F28C38; margin-top:0;'>Données détaillées des consommations</h2>
+        <p style='color:#424242;'>Visualisez et exportez les interventions enregistrées</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Afficher un échantillon avec possibilité de tout voir
-    if st.checkbox("Afficher toutes les données (défilement)"):
-        height = 600
-    else:
-        height = 300
+    height = 600 if st.checkbox("Afficher toutes les données (défilement)") else 300
     
     st.dataframe(
         filtered_data[['Date', 'Engin_Formaté', 'Desc_Cat', 'Montant', 'Mois']]
@@ -139,8 +329,13 @@ with tab1:
         use_container_width=True
     )
     
-    # Export des données
-    st.markdown("<h3 style='color:#F28C38;'>Exporter les données</h3>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style='background-color:#f3e5f5; padding:20px; border-radius:10px; border-left:5px solid #8e24aa; margin-top:20px;'>
+        <h3 style='color:#F28C38; margin-top:0;'>Exporter les données</h3>
+        <p style='color:#424242;'>Téléchargez les données filtrées au format souhaité</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     export_col1, export_col2 = st.columns([1, 3])
     with export_col1:
         export_format = st.radio("Format", ['CSV', 'Excel'])
@@ -165,176 +360,343 @@ with tab1:
             )
 
 # Onglet 2 : Analyse
+# Onglet 2 : Analyse
+# Onglet 2 : Analyse
 with tab2:
+    # Select engin for analysis
     if selected_engin == 'Tous':
-        selected = st.selectbox('Choisir un engin à analyser', sorted(df['Engin_Formaté'].unique()))
+        selected = st.selectbox('Choisir un engin à analyser', sorted(df['Engin_Formaté'].unique()), key='engin_select')
         engin_data = df[df['Engin_Formaté'] == selected]
     else:
         engin_data = filtered_data
     
-    st.markdown(f"<h2 style='color:#F28C38;'>Analyse pour {engin_data['Engin_Formaté'].iloc[0].split('-')[-1]}</h2>", unsafe_allow_html=True)
+    # Category filter
+    st.markdown("#### Filtrer par Catégorie")
+    category_filter = st.multiselect(
+        'Sélectionner des catégories',
+        engin_data['Desc_Cat'].unique(),
+        default=engin_data['Desc_Cat'].unique(),
+        key='category_filter'
+    )
+    filtered_engin_data = engin_data[engin_data['Desc_Cat'].isin(category_filter)]
     
-    # Colonnes principales
+    # Budget threshold input
+    budget_threshold = st.number_input(
+        'Seuil budgétaire (MAD)',
+        min_value=0,
+        value=0,
+        step=1000,
+        help='Définir un seuil pour identifier les coûts élevés'
+    )
+    
+    # Header
+    st.markdown(f"""
+    <div style='background-color:#e3f2fd; padding:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
+        <h2 style='color:#F28C38; margin-top:0;'>Analyse pour R1600-{filtered_engin_data['Engin_Formaté'].iloc[0].split('-')[-1]}</h2>
+        <p style='color:#424242;'>Visualisations détaillées et prévisions des coûts pour une meilleure prise de décision</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Main layout: Visualizations on left, Metrics and Predictions on right
     col1, col2 = st.columns([7, 3])
-    
+
+    # Visualizations Section
     with col1:
-        # Graphique d'évolution temporelle avec projection
-        fig = px.line(
-            engin_data.groupby('Date')['Montant'].sum().reset_index(),
-            x='Date', y='Montant',
-            title='Évolution des dépenses avec projection',
-            height=400
-        )
-        
-        # Ajout de la projection si assez de données
-        if len(engin_data) >= 3:
-            dates = engin_data.groupby('Date')['Montant'].sum().index
-            x = np.arange(len(dates))
-            y = engin_data.groupby('Date')['Montant'].sum().values
-            coeff = np.polyfit(x, y, 1)
-            future_dates = [dates[-1] + pd.DateOffset(months=i) for i in range(1,4)]
-            projection = np.polyval(coeff, [x[-1]+1, x[-1]+2, x[-1]+3])
-            
-            fig.add_scatter(
-                x=future_dates,
-                y=projection,
-                mode='lines+markers',
-                name='Projection (linéaire)',
-                line=dict(color='red', dash='dot')
-            )
-            
-            # Ajout des fourchettes
-            fig.add_scatter(
-                x=future_dates,
-                y=projection * 1.3,
-                mode='lines',
-                name='Fourchette haute (+30%)',
-                line=dict(color='orange', dash='dash')
-            )
-            
-            fig.add_scatter(
-                x=future_dates,
-                y=projection * 0.7,
-                mode='lines',
-                name='Fourchette basse (-30%)',
-                line=dict(color='green', dash='dash')
-            )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Mini-graphiques d'analyse
-        subcols = st.columns(3)
-        with subcols[0]:
-            st.plotly_chart(
-                px.pie(
-                    engin_data.groupby('Desc_Cat')['Montant'].sum().reset_index(),
-                    values='Montant', names='Desc_Cat',
-                    title='Répartition par catégorie',
-                    height=250
-                ),
-                use_container_width=True
-            )
-        
-        with subcols[1]:
-            st.plotly_chart(
-                px.bar(
-                    engin_data.groupby('Mois')['Montant'].sum().reset_index(),
-                    x='Mois', y='Montant',
-                    title='Coût mensuel',
-                    height=250
-                ),
-                use_container_width=True
-            )
-        
-        with subcols[2]:
-            st.plotly_chart(
-                px.histogram(
-                    engin_data, x='Montant',
-                    title='Distribution des coûts',
-                    height=250
-                ),
-                use_container_width=True
-            )
-    
-    with col2:
-        # Panneau de prévision compact
         st.markdown("""
-        <div style='background-color:#f8f9fa; padding:15px; border-radius:10px; border-left:4px solid #4285f4; margin-bottom:20px;'>
-            <h3 style='color:#F28C38; margin-top:0;'>🔮 Prévision</h3>
+        <div style='background-color:#fff8e1; padding:15px; border-radius:10px; border-left:5px solid #ffa000; margin-bottom:20px;'>
+            <h3 style='color:#F28C38; margin-top:0;'>📈 Visualisations des Coûts</h3>
         </div>
         """, unsafe_allow_html=True)
+
+        # Store figures and descriptions for Word export
+        figs = []
+        descriptions = []
+
+        # Graph 1: Evolution and Projection
+        st.markdown("#### Évolution des Dépenses")
+        fig1 = px.line(
+            filtered_engin_data.groupby('Date')['Montant'].sum().reset_index(),
+            x='Date', y='Montant',
+            title='Évolution des Dépenses avec Projection',
+            height=350,
+            template='plotly_white'
+        )
+        fig1.update_traces(line=dict(color='#F28C38'), hovertemplate='%{x|%d/%m/%Y}<br>%{y:,.0f} MAD')
         
-        if len(engin_data) >= 3:
-            last_3 = engin_data.groupby('Mois')['Montant'].sum().tail(3)
+        if len(filtered_engin_data) >= 3:
+            dates = filtered_engin_data.groupby('Date')['Montant'].sum().index
+            x = np.arange(len(dates))
+            y = filtered_engin_data.groupby('Date')['Montant'].sum().values
+            coeff = np.polyfit(x, y, 1)
+            future_dates = [dates[-1] + pd.DateOffset(months=i) for i in range(1, 4)]
+            projection = np.polyval(coeff, [x[-1]+1, x[-1]+2, x[-1]+3])
+            
+            fig1.add_scatter(
+                x=future_dates, y=projection, mode='lines+markers',
+                name='Projection (linéaire)', line=dict(color='red', dash='dot'),
+                hovertemplate='%{x|%d/%m/%Y}<br>%{y:,.0f} MAD'
+            )
+            fig1.add_scatter(
+                x=future_dates, y=projection * 1.3, mode='lines',
+                name='Fourchette haute (+30%)', line=dict(color='orange', dash='dash'),
+                hovertemplate='%{x|%d/%m/%Y}<br>%{y:,.0f} MAD'
+            )
+            fig1.add_scatter(
+                x=future_dates, y=projection * 0.7, mode='lines',
+                name='Fourchette basse (-30%)', line=dict(color='green', dash='dash'),
+                hovertemplate='%{x|%d/%m/%Y}<br>%{y:,.0f} MAD'
+            )
+        
+        fig1.update_layout(
+            xaxis_title="Date", yaxis_title="Montant (MAD)",
+            legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+            margin=dict(t=50, b=50)
+        )
+        st.plotly_chart(fig1, use_container_width=True)
+        desc1 = (
+            "Cette courbe montre l'évolution des dépenses avec une projection linéaire sur 3 mois. "
+            "Les fourchettes haute et basse indiquent une variabilité potentielle de ±30%, permettant "
+            "d'anticiper les tendances futures."
+        )
+        st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc1}</p>", unsafe_allow_html=True)
+        figs.append(fig1)
+        descriptions.append(desc1)
+
+        # Graph 2: Cost Distribution
+        st.markdown("#### Distribution des Coûts")
+        fig2 = px.histogram(
+            filtered_engin_data, x='Montant',
+            title='Distribution des Coûts',
+            height=350,
+            template='plotly_white',
+            nbins=20
+        )
+        fig2.update_traces(marker=dict(color='#1976d2'), hovertemplate='Coût: %{x:,.0f} MAD<br>Fréquence: %{y}')
+        fig2.update_layout(
+            xaxis_title="Montant (MAD)", yaxis_title="Fréquence",
+            margin=dict(t=50, b=50)
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+        desc2 = (
+            "Cet histogramme montre la répartition des coûts par intervention, mettant en évidence "
+            "les montants les plus fréquents et les valeurs aberrantes (outliers). Cela aide à identifier "
+            "les interventions coûte System: uses pour optimiser la gestion budgétaire."
+        )
+        st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc2}</p>", unsafe_allow_html=True)
+        figs.append(fig2)
+        descriptions.append(desc2)
+
+        # Graph 3: Category Breakdown
+        st.markdown("#### Répartition par Catégorie")
+        fig3 = px.pie(
+            compute_category_breakdown(filtered_engin_data),
+            values='Montant', names='Desc_Cat',
+            title='Répartition par Catégorie',
+            height=350,
+            template='plotly_white'
+        )
+        fig3.update_traces(textinfo='percent+label', hovertemplate='%{label}: %{value:,.0f} MAD (%{percent})')
+        fig3.update_layout(margin=dict(t=50, b=50))
+        st.plotly_chart(fig3, use_container_width=True)
+        desc3 = (
+            "Ce graphique montre la répartition des dépenses par catégorie, permettant d'identifier "
+            "les principales sources de coûts et de prioriser les efforts de réduction des dépenses."
+        )
+        st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc3}</p>", unsafe_allow_html=True)
+        figs.append(fig3)
+        descriptions.append(desc3)
+
+        # Graph 4: Monthly Costs
+        st.markdown("#### Coûts Mensuels")
+        monthly_data = compute_monthly_costs(filtered_engin_data)
+        fig4 = px.bar(
+            monthly_data,
+            x='Mois', y='Montant',
+            title='Coût Mensuel',
+            height=350,
+            template='plotly_white'
+        )
+        fig4.update_traces(marker=dict(color='#388e3c'), hovertemplate='%{x}<br>%{y:,.0f} MAD')
+        fig4.update_layout(
+            xaxis_title="Mois", yaxis_title="Montant (MAD)",
+            margin=dict(t=50, b=50)
+        )
+        st.plotly_chart(fig4, use_container_width=True)
+        desc4 = (
+            "Ce graphique à barres montre les dépenses mensuelles, mettant en évidence les variations "
+            "saisonnières ou les pics de coûts, utiles pour planifier les budgets mensuels."
+        )
+        st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc4}</p>", unsafe_allow_html=True)
+        figs.append(fig4)
+        descriptions.append(desc4)
+
+    # Metrics and Predictions Section
+    with col2:
+        # Key Metrics
+        st.markdown("""
+        <div style='background-color:#f3e5f5; padding:15px; border-radius:10px; border-left:5px solid #8e24aa; margin-bottom:20px;'>
+            <h3 style='color:#F28C38; margin-top:0;'>📊 Indicateurs Clés</h3>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if 'Montant' not in filtered_engin_data.columns:
+            st.error("Erreur : La colonne 'Montant' est introuvable. Colonnes disponibles : " + str(filtered_engin_data.columns.tolist()))
+        elif filtered_engin_data.empty:
+            st.warning("Aucune donnée disponible pour cet engin. Veuillez ajuster les filtres.")
+        else:
+            last_month = filtered_engin_data.groupby('Mois')['Montant'].sum().iloc[-1] if not filtered_engin_data.groupby('Mois')['Montant'].sum().empty else 0
+            avg_3m = filtered_engin_data.groupby('Mois')['Montant'].sum().tail(3).mean() if len(filtered_engin_data.groupby('Mois')['Montant'].sum()) >= 3 else 0
+            max_cost = filtered_engin_data['Montant'].max()
+            total_cost = filtered_engin_data['Montant'].sum()
+            num_interventions = len(filtered_engin_data)
+            median_cost = filtered_engin_data['Montant'].median()
+            cost_variance = filtered_engin_data['Montant'].var() if len(filtered_engin_data) > 1 else 0
+
+            metrics = {
+                'Dernier mois': f"{last_month:,.0f} MAD",
+                'Moyenne 3 mois': f"{avg_3m:,.0f} MAD",
+                'Coût maximal': f"{max_cost:,.0f} MAD",
+                'Coût total': f"{total_cost:,.0f} MAD",
+                'Interventions': num_interventions,
+                'Coût médian': f"{median_cost:,.0f} MAD",
+                'Variance des coûts': f"{cost_variance:,.0f} MAD²"
+            }
+            st.markdown(f"""
+            <div style='color:#424242; font-size:14px;'>
+                <p><strong>Dernier mois :</strong> {last_month:,.0f} MAD</p>
+                <p><strong>Moyenne 3 mois :</strong> {avg_3m:,.0f} MAD</p>
+                <p><strong>Coût maximal :</strong> {max_cost:,.0f} MAD</p>
+                <p><strong>Coût total :</strong> {total_cost:,.0f} MAD</p>
+                <p><strong>Interventions :</strong> {num_interventions}</p>
+                <p><strong>Coût médian :</strong> {median_cost:,.0f} MAD</p>
+                <p><strong>Variance des coûts :</strong> {cost_variance:,.0f} MAD²</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Predictions
+        st.markdown("""
+        <div style='background-color:#e8f5e9; padding:15px; border-radius:10px; border-left:5px solid #388e3c; margin-bottom:20px;'>
+            <h3 style='color:#F28C38; margin-top:0;'>🔮 Prévisions des Coûts</h3>
+            <p style='color:#424242;'>Estimations basées sur les données historiques</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        predictions = {}
+        if len(filtered_engin_data) >= 3:
+            last_3 = filtered_engin_data.groupby('Mois')['Montant'].sum().tail(3)
             avg = last_3.mean()
-            
-            st.metric("Estimation moyenne", f"{avg:,.0f} MAD/mois")
-            st.metric("Fourchette probable", 
-                      f"{last_3.min():,.0f}-{last_3.max():,.0f} MAD")
-            
-            st.progress(65, "Fiabilité des prévisions")
-            st.caption("Basé sur les 3 derniers mois")
-            
-            # Bouton d'export
-            if st.button("💾 Exporter prévisions", key="export_btn"):
+            std = last_3.std() if len(last_3) > 1 else 0
+            num_months = len(filtered_engin_data.groupby('Mois'))
+            reliability = min(90, 50 + 5 * num_months - 10 * (std / avg if avg > 0 else 0))
+            reliability = max(50, reliability)
+            ci_lower = avg - 1.96 * std / np.sqrt(len(last_3)) if std > 0 else avg * 0.7
+            ci_upper = avg + 1.96 * std / np.sqrt(len(last_3)) if std > 0 else avg * 1.3
+
+            trend = "Stable"
+            if len(last_3) >= 2:
+                diff = last_3.iloc[-1] - last_3.iloc[-2]
+                if diff > 0.1 * avg:
+                    trend = "En hausse"
+                elif diff < -0.1 * avg:
+                    trend = "En baisse"
+
+            predictions = {
+                'avg': avg,
+                'ci_lower': ci_lower,
+                'ci_upper': ci_upper,
+                'reliability': reliability,
+                'trend': trend
+            }
+
+            st.markdown(f"""
+            <div style='color:#424242; font-size:14px;'>
+                <p><strong>Estimation moyenne :</strong> {avg:,.0f} MAD/mois</p>
+                <p><strong>Intervalle de confiance (95%) :</strong> {ci_lower:,.0f} - {ci_upper:,.0f} MAD</p>
+                <p><strong>Fiabilité des prévisions :</strong> {reliability:.0f}%</p>
+                <p><strong>Tendance récente :</strong> {trend}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.progress(int(reliability), "Fiabilité des prévisions")
+            st.caption("Basé sur les 3 derniers mois et la variabilité des données")
+
+            # Export predictions
+            if st.button("💾 Exporter prévisions", key="export_predictions"):
                 future_dates = pd.date_range(
-                    start=engin_data['Date'].max() + pd.DateOffset(months=1),
-                    periods=3,
-                    freq='M'
+                    start=filtered_engin_data['Date'].max() + pd.DateOffset(months=1),
+                    periods=3, freq='M'
                 )
                 projections = pd.DataFrame({
                     'Mois': future_dates.strftime('%Y-%m'),
-                    'Estimation': [avg]*3,
-                    'Minimum': [last_3.min()]*3,
-                    'Maximum': [last_3.max()]*3
+                    'Estimation Moyenne (MAD)': [avg]*3,
+                    'Intervalle Bas (MAD)': [ci_lower]*3,
+                    'Intervalle Haut (MAD)': [ci_upper]*3,
+                    'Fiabilité (%)': [reliability]*3
                 })
-                
                 csv = projections.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="Télécharger CSV",
                     data=csv,
-                    file_name='previsions_engin.csv',
+                    file_name=f'previsions_{selected}.csv',
                     mime='text/csv'
                 )
         else:
-            st.warning("Données insuffisantes (minimum 3 mois requis)")
-        
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        # Panneau d'indicateurs clés
-        st.markdown("""
-        <div style='background-color:#000000; padding:15px; border-radius:10px; border-left:4px solid #4285f4; margin-bottom:20px;'>
-            <h3 style='color:#F28C38; margin-top:0;'>📊 Indicateurs</h3>
-            <p>Dernier mois: <strong>{last_month:,.0f} MAD</strong></p>
-            <p>Moyenne 3m: <strong>{avg_3m:,.0f} MAD</strong></p>
-            <p>Maximum: <strong>{max_m:,.0f} MAD</strong></p>
-            <p>Coût total: <strong>{total:,.0f} MAD</strong></p>
-        </div>
-        """.format(
-            last_month=engin_data.groupby('Mois')['Montant'].sum().iloc[-1],
-            avg_3m=engin_data.groupby('Mois')['Montant'].sum().tail(3).mean(),
-            max_m=engin_data['Montant'].max(),
-            total=engin_data['Montant'].sum()
-        ), unsafe_allow_html=True)
-    
-    # Section d'analyse
-    st.markdown("""
-    **📝 Analyse des tendances :**
-    - La projection (ligne rouge) montre l'évolution estimée
-    - Les fourchettes donnent une plage de valeurs probables
-    - Les données limitées réduisent la précision des prévisions
-    
-    **💡 Recommandations :**
-    1. Surveiller particulièrement les catégories majoritaires
-    2. Analyser les causes des pics de dépenses
-    3. Collecter plus de données pour améliorer les prévisions
-    """)
+            st.markdown("""
+            <div style='background-color:#ffebee; padding:10px; border-radius:5px;'>
+                <p style='color:#d32f2f;'>⚠ Données insuffisantes (minimum 3 mois requis)</p>
+            </div>
+            """, unsafe_allow_html=True)
 
+    # Export Section
+    st.markdown("""
+    <div style='background-color:#e3f2fd; padding:15px; border-radius:10px; border-left:5px solid #1976d2; margin-top:20px;'>
+        <h3 style='color:#F28C38; margin-top:0;'>📄 Exporter les Analyses</h3>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if not filtered_engin_data.empty:
+        # CSV Export
+        summary_data = {
+            'Métrique': ['Coût Total', 'Coût Moyen (3 mois)', 'Coût Maximal', 'Nombre d\'Interventions', 
+                         'Catégorie Principale', 'Coût Médian', 'Variance des Coûts'],
+            'Valeur': [
+                f"{filtered_engin_data['Montant'].sum():,.0f} MAD",
+                f"{filtered_engin_data.groupby('Mois')['Montant'].sum().tail(3).mean():,.0f} MAD" if len(filtered_engin_data.groupby('Mois')) >= 3 else 'N/A',
+                f"{filtered_engin_data['Montant'].max():,.0f} MAD",
+                len(filtered_engin_data),
+                filtered_engin_data.groupby('Desc_Cat')['Montant'].sum().idxmax(),
+                f"{filtered_engin_data['Montant'].median():,.0f} MAD",
+                f"{filtered_engin_data['Montant'].var():,.0f} MAD²" if len(filtered_engin_data) > 1 else '0 MAD²'
+            ]
+        }
+        summary_df = pd.DataFrame(summary_data)
+        csv = summary_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Télécharger Rapport CSV",
+            data=csv,
+            file_name=f'rapport_analyse_{selected}.csv',
+            mime='text/csv'
+        )
+
+        # Word Export
+        if st.button("📝 Exporter Rapport Word"):
+            word_buffer = generate_word_report(
+                filtered_engin_data, selected, figs, descriptions, metrics, predictions, budget_threshold
+            )
+            st.download_button(
+                label="Télécharger Rapport Word",
+                data=word_buffer,
+                file_name=f'rapport_analyse_{selected}.docx',
+                mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            )
 # Onglet 3 : Comparaisons
 with tab3:
-    st.markdown("<h2 style='color:#F28C38;'>Comparaisons entre engins</h2>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style='background-color:#e3f2fd; padding:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
+        <h2 style='color:#F28C38; margin-top:0;'>Comparaisons entre engins</h2>
+        <p style='color:#424242;'>Analyse des coûts par engin et catégorie</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Heatmap compacte
     st.plotly_chart(
         px.imshow(
             df.pivot_table(index='Engin_Formaté', columns='Desc_Cat', values='Montant', aggfunc='sum'),
@@ -346,51 +708,49 @@ with tab3:
         use_container_width=True
     )
     
-    # Graphiques de comparaison côte à côte
     col1, col2 = st.columns(2)
     with col1:
+        st.markdown("""
+        <div style='background-color:#fff8e1; padding:15px; border-radius:10px; border-left:5px solid #ffa000; margin-bottom:10px;'>
+            <h3 style='color:#F28C38; margin-top:0;'>Coût total par engin</h3>
+        </div>
+        """, unsafe_allow_html=True)
         st.plotly_chart(
             px.bar(
                 df.groupby('Engin_Formaté')['Montant'].sum().reset_index().sort_values('Montant'),
                 x='Montant', y='Engin_Formaté',
-                title='Coût total par engin',
+                title='',
                 height=400
             ),
             use_container_width=True
         )
     with col2:
+        st.markdown("""
+        <div style='background-color:#e8f5e9; padding:15px; border-radius:10px; border-left:5px solid #388e3c; margin-bottom:10px;'>
+            <h3 style='color:#F28C38; margin-top:0;'>Distribution des coûts</h3>
+        </div>
+        """, unsafe_allow_html=True)
         st.plotly_chart(
             px.box(
                 df, x='Engin_Formaté', y='Montant',
-                title='Distribution des coûts par engin',
+                title='',
                 height=400
             ),
             use_container_width=True
         )
-    st.markdown("""
-    **📝 Analyse de la heatmap :**  
-    - Les cases chaudes (rouges) révèlent des combinaisons engin/catégorie problématiques  
-    - Patterns verticaux = problèmes communs à plusieurs engins  
-    - Patterns horizontaux = engins particulièrement coûteux
-    """)
-    
-    st.markdown("""
-    **📝 Analyse des boîtes à moustaches :**  
-    - Médiane élevée = coût de base important  
-    - Longues moustaches = grande variabilité des coûts  
-    - Points isolés = interventions exceptionnellement coûteuses
-    """)
 
-# =============================================
-# SECTION RECOMMANDATIONS SIMPLIFIÉE (MAD)
-# =============================================
+# Onglet 4 : Recommandations
 with tab4:
-    st.markdown("<h2 style='color:#F28C38;'>🚀 Plan d'Action Simplifié</h2>", unsafe_allow_html=True, help="Recommandations pratiques pour réduire les coûts")
+    st.markdown("""
+    <div style='background-color:#e3f2fd; padding:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
+        <h2 style='color:#F28C38; margin-top:0;'>🚀 Plan d'Action Simplifié</h2>
+        <p style='color:#424242;'>Recommandations pratiques pour réduire les coûts</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Cartes visuelles avec recommandations
     col1, col2 = st.columns(2)
-    
     with col1:
+        top_category = df.groupby('Desc_Cat')['Montant'].sum().idxmax()
         st.markdown(f"""
         <div style='background-color:#e3f2fd; padding:20px; border-radius:10px; margin-bottom:20px; border-left:5px solid #1976d2;'>
             <h3 style='color:#F28C38; margin-top:0;'>🔍 Top 3 des Dépenses à Surveiller</h3>
@@ -422,7 +782,6 @@ with tab4:
         </div>
         """, unsafe_allow_html=True)
     
-    # Timeline d'actions
     st.markdown("""
     <div style='background-color:#e8f5e9; padding:20px; border-radius:10px; margin-bottom:20px; border-left:5px solid #388e3c;'>
         <h3 style='color:#F28C38; margin-top:0;'>📅 Plan d'Action sur 3 Mois</h3>
@@ -443,7 +802,6 @@ with tab4:
     </div>
     """, unsafe_allow_html=True)
     
-    # Checklist interactive
     st.markdown("""
     <div style='background-color:#f3e5f5; padding:20px; border-radius:10px; margin-bottom:20px; border-left:5px solid #8e24aa;'>
         <h3 style='color:#F28C38; margin-top:0;'>✅ Checklist des Actions Clés</h3>
@@ -455,7 +813,6 @@ with tab4:
     </div>
     """, unsafe_allow_html=True)
     
-    # Conseils pratiques
     st.markdown(f"""
     <div style='background-color:#ffebee; padding:20px; border-radius:10px; border-left:5px solid #d32f2f;'>
         <h3 style='color:#F28C38; text-align:center; margin-top:0;'>💡 3 Astuces pour Réduire les Coûts (MAD)</h3>
