@@ -10,9 +10,9 @@ import plotly.io as pio
 from PIL import Image
 import google.generativeai as genai
 
-# Initialize Gemini API with key from secrets
+# Initialize Gemini API with hardcoded key
 try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    genai.configure(api_key="AIzaSyCFRIMWvXPINI8nS1UnrKqqhSAnjro0Ts8")
     gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 except Exception as e:
     st.error(f"Erreur lors de l'initialisation du client Gemini : {str(e)}")
