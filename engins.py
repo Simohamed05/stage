@@ -368,35 +368,8 @@ with tab2:
         selected = st.selectbox('Choisir un engin à analyser', sorted(df['Engin_Formaté'].unique()), key='engin_select')
         engin_data = df[df['Engin_Formaté'] == selected]
     else:
-        engin_data = filtered_data
+        engin_data = df[df['Engin_Formaté'] == selected_engin]
     
-    # Category filter
-    st.markdown("#### Filtrer par Catégorie")
-    category_filter = st.multiselect(
-        'Sélectionner des catégories',
-        engin_data['Desc_Cat'].unique(),
-        default=engin_data['Desc_Cat'].unique(),
-        key='category_filter'
-    )
-    filtered_engin_data = engin_data[engin_data['Desc_Cat'].isin(category_filter)]
-    
-    # Budget threshold input
-    budget_threshold = st.number_input(
-        'Seuil budgétaire (MAD)',
-        min_value=0,
-        value=0,
-        step=1000,
-        help='Définir un seuil pour identifier les coûts élevés'
-    )
-    
-    # Header
-    st.markdown(f"""
-    <div style='background-color:#e3f2fd; padding:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
-        <h2 style='color:#F28C38; margin-top:0;'>Analyse pour R1600-{filtered_engin_data['Engin_Formaté'].iloc[0].split('-')[-1]}</h2>
-        <p style='color:#424242;'>Visualisations détaillées et prévisions des coûts pour une meilleure prise de décision</p>
-    </div>
-    """, unsafe_allow_html=True)
-
     # Main layout: Visualizations on left, Metrics and Predictions on right
     col1, col2 = st.columns([7, 3])
 
@@ -415,7 +388,7 @@ with tab2:
         # Graph 1: Evolution and Projection
         st.markdown("#### Évolution des Dépenses")
         fig1 = px.line(
-            filtered_engin_data.groupby('Date')['Montant'].sum().reset_index(),
+            engin_data.groupby('Date')['Montant'].sum().reset_index(),
             x='Date', y='Montant',
             title='Évolution des Dépenses avec Projection',
             height=350,
@@ -423,10 +396,10 @@ with tab2:
         )
         fig1.update_traces(line=dict(color='#F28C38'), hovertemplate='%{x|%d/%m/%Y}<br>%{y:,.0f} MAD')
         
-        if len(filtered_engin_data) >= 3:
-            dates = filtered_engin_data.groupby('Date')['Montant'].sum().index
+        if len(engin_data) >= 3:
+            dates = engin_data.groupby('Date')['Montant'].sum().index
             x = np.arange(len(dates))
-            y = filtered_engin_data.groupby('Date')['Montant'].sum().values
+            y = engin_data.groupby('Date')['Montant'].sum().values
             coeff = np.polyfit(x, y, 1)
             future_dates = [dates[-1] + pd.DateOffset(months=i) for i in range(1, 4)]
             projection = np.polyval(coeff, [x[-1]+1, x[-1]+2, x[-1]+3])
@@ -465,7 +438,7 @@ with tab2:
         # Graph 2: Cost Distribution
         st.markdown("#### Distribution des Coûts")
         fig2 = px.histogram(
-            filtered_engin_data, x='Montant',
+            engin_data, x='Montant',
             title='Distribution des Coûts',
             height=350,
             template='plotly_white',
@@ -480,7 +453,7 @@ with tab2:
         desc2 = (
             "Cet histogramme montre la répartition des coûts par intervention, mettant en évidence "
             "les montants les plus fréquents et les valeurs aberrantes (outliers). Cela aide à identifier "
-            "les interventions coûte System: uses pour optimiser la gestion budgétaire."
+            "les interventions coûteuses pour optimiser la gestion budgétaire."
         )
         st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc2}</p>", unsafe_allow_html=True)
         figs.append(fig2)
@@ -489,7 +462,7 @@ with tab2:
         # Graph 3: Category Breakdown
         st.markdown("#### Répartition par Catégorie")
         fig3 = px.pie(
-            compute_category_breakdown(filtered_engin_data),
+            compute_category_breakdown(engin_data),
             values='Montant', names='Desc_Cat',
             title='Répartition par Catégorie',
             height=350,
@@ -508,7 +481,7 @@ with tab2:
 
         # Graph 4: Monthly Costs
         st.markdown("#### Coûts Mensuels")
-        monthly_data = compute_monthly_costs(filtered_engin_data)
+        monthly_data = compute_monthly_costs(engin_data)
         fig4 = px.bar(
             monthly_data,
             x='Mois', y='Montant',
@@ -539,18 +512,18 @@ with tab2:
         </div>
         """, unsafe_allow_html=True)
 
-        if 'Montant' not in filtered_engin_data.columns:
-            st.error("Erreur : La colonne 'Montant' est introuvable. Colonnes disponibles : " + str(filtered_engin_data.columns.tolist()))
-        elif filtered_engin_data.empty:
-            st.warning("Aucune donnée disponible pour cet engin. Veuillez ajuster les filtres.")
+        if 'Montant' not in engin_data.columns:
+            st.error("Erreur : La colonne 'Montant' est introuvable. Colonnes disponibles : " + str(engin_data.columns.tolist()))
+        elif engin_data.empty:
+            st.warning("Aucune donnée disponible pour cet engin. Veuillez sélectionner un autre engin.")
         else:
-            last_month = filtered_engin_data.groupby('Mois')['Montant'].sum().iloc[-1] if not filtered_engin_data.groupby('Mois')['Montant'].sum().empty else 0
-            avg_3m = filtered_engin_data.groupby('Mois')['Montant'].sum().tail(3).mean() if len(filtered_engin_data.groupby('Mois')['Montant'].sum()) >= 3 else 0
-            max_cost = filtered_engin_data['Montant'].max()
-            total_cost = filtered_engin_data['Montant'].sum()
-            num_interventions = len(filtered_engin_data)
-            median_cost = filtered_engin_data['Montant'].median()
-            cost_variance = filtered_engin_data['Montant'].var() if len(filtered_engin_data) > 1 else 0
+            last_month = engin_data.groupby('Mois')['Montant'].sum().iloc[-1] if not engin_data.groupby('Mois')['Montant'].sum().empty else 0
+            avg_3m = engin_data.groupby('Mois')['Montant'].sum().tail(3).mean() if len(engin_data.groupby('Mois')['Montant'].sum()) >= 3 else 0
+            max_cost = engin_data['Montant'].max()
+            total_cost = engin_data['Montant'].sum()
+            num_interventions = len(engin_data)
+            median_cost = engin_data['Montant'].median()
+            cost_variance = engin_data['Montant'].var() if len(engin_data) > 1 else 0
 
             metrics = {
                 'Dernier mois': f"{last_month:,.0f} MAD",
@@ -582,11 +555,11 @@ with tab2:
         """, unsafe_allow_html=True)
 
         predictions = {}
-        if len(filtered_engin_data) >= 3:
-            last_3 = filtered_engin_data.groupby('Mois')['Montant'].sum().tail(3)
+        if len(engin_data) >= 3:
+            last_3 = engin_data.groupby('Mois')['Montant'].sum().tail(3)
             avg = last_3.mean()
             std = last_3.std() if len(last_3) > 1 else 0
-            num_months = len(filtered_engin_data.groupby('Mois'))
+            num_months = len(engin_data.groupby('Mois'))
             reliability = min(90, 50 + 5 * num_months - 10 * (std / avg if avg > 0 else 0))
             reliability = max(50, reliability)
             ci_lower = avg - 1.96 * std / np.sqrt(len(last_3)) if std > 0 else avg * 0.7
@@ -622,7 +595,7 @@ with tab2:
             # Export predictions
             if st.button("💾 Exporter prévisions", key="export_predictions"):
                 future_dates = pd.date_range(
-                    start=filtered_engin_data['Date'].max() + pd.DateOffset(months=1),
+                    start=engin_data['Date'].max() + pd.DateOffset(months=1),
                     periods=3, freq='M'
                 )
                 projections = pd.DataFrame({
@@ -653,19 +626,19 @@ with tab2:
     </div>
     """, unsafe_allow_html=True)
 
-    if not filtered_engin_data.empty:
+    if not engin_data.empty:
         # CSV Export
         summary_data = {
             'Métrique': ['Coût Total', 'Coût Moyen (3 mois)', 'Coût Maximal', 'Nombre d\'Interventions', 
                          'Catégorie Principale', 'Coût Médian', 'Variance des Coûts'],
             'Valeur': [
-                f"{filtered_engin_data['Montant'].sum():,.0f} MAD",
-                f"{filtered_engin_data.groupby('Mois')['Montant'].sum().tail(3).mean():,.0f} MAD" if len(filtered_engin_data.groupby('Mois')) >= 3 else 'N/A',
-                f"{filtered_engin_data['Montant'].max():,.0f} MAD",
-                len(filtered_engin_data),
-                filtered_engin_data.groupby('Desc_Cat')['Montant'].sum().idxmax(),
-                f"{filtered_engin_data['Montant'].median():,.0f} MAD",
-                f"{filtered_engin_data['Montant'].var():,.0f} MAD²" if len(filtered_engin_data) > 1 else '0 MAD²'
+                f"{engin_data['Montant'].sum():,.0f} MAD",
+                f"{engin_data.groupby('Mois')['Montant'].sum().tail(3).mean():,.0f} MAD" if len(engin_data.groupby('Mois')) >= 3 else 'N/A',
+                f"{engin_data['Montant'].max():,.0f} MAD",
+                len(engin_data),
+                engin_data.groupby('Desc_Cat')['Montant'].sum().idxmax(),
+                f"{engin_data['Montant'].median():,.0f} MAD",
+                f"{engin_data['Montant'].var():,.0f} MAD²" if len(engin_data) > 1 else '0 MAD²'
             ]
         }
         summary_df = pd.DataFrame(summary_data)
@@ -678,9 +651,10 @@ with tab2:
         )
 
         # Word Export
+        budget_threshold = 10000  # Définir une valeur par défaut ou demander à l'utilisateur
         if st.button("📝 Exporter Rapport Word"):
             word_buffer = generate_word_report(
-                filtered_engin_data, selected, figs, descriptions, metrics, predictions, budget_threshold
+                engin_data, selected, figs, descriptions, metrics, predictions, budget_threshold
             )
             st.download_button(
                 label="Télécharger Rapport Word",
