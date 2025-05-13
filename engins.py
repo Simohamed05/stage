@@ -14,7 +14,7 @@ import httpx
 # Initialize OpenAI client with provided API key and no proxies
 try:
     client = openai.OpenAI(
-        api_key="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",
+        api_key="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",
         http_client=httpx.Client(proxies={})  # Explicitly disable proxies
     )
 except Exception as e:
