@@ -9,9 +9,17 @@ from io import BytesIO
 import plotly.io as pio
 from PIL import Image
 import openai
+import httpx
 
-# Initialize OpenAI client with provided API key
-client = openai.OpenAI(api_key="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")
+# Initialize OpenAI client with provided API key and no proxies
+try:
+    client = openai.OpenAI(
+        api_key="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",
+        http_client=httpx.Client(proxies={})  # Explicitly disable proxies
+    )
+except Exception as e:
+    st.error(f"Erreur lors de l'initialisation du client OpenAI : {str(e)}")
+    st.stop()
 
 # Cache expensive computations
 @st.cache_data
@@ -538,7 +546,7 @@ with tab2:
             "Les fourchettes haute et basse indiquent une variabilité potentielle de ±30%, permettant "
             "d'anticiper les tendances futures."
         )
-        st.markdown(f"<p style='color:#ffffff; font-size:14px;'>{desc1}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc1}</p>", unsafe_allow_html=True)
         figs.append(fig1)
         descriptions.append(desc1)
 
@@ -562,7 +570,7 @@ with tab2:
             "les montants les plus fréquents et les valeurs aberrantes (outliers). Cela aide à identifier "
             "les interventions coûteuses pour optimiser la gestion budgétaire."
         )
-        st.markdown(f"<p style='color:#ffffff; font-size:14px;'>{desc2}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc2}</p>", unsafe_allow_html=True)
         figs.append(fig2)
         descriptions.append(desc2)
 
@@ -582,7 +590,7 @@ with tab2:
             "Ce graphique montre la répartition des dépenses par catégorie, permettant d'identifier "
             "les principales sources de coûts et de prioriser les efforts de réduction des dépenses."
         )
-        st.markdown(f"<p style='color:#ffffff; font-size:14px;'>{desc3}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc3}</p>", unsafe_allow_html=True)
         figs.append(fig3)
         descriptions.append(desc3)
 
@@ -606,7 +614,7 @@ with tab2:
             "Ce graphique à barres montre les dépenses mensuelles, mettant en évidence les variations "
             "saisonnières ou les pics de coûts, utiles pour planifier les budgets mensuels."
         )
-        st.markdown(f"<p style='color:#ffffff; font-size:14px;'>{desc4}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc4}</p>", unsafe_allow_html=True)
         figs.append(fig4)
         descriptions.append(desc4)
 
