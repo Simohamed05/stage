@@ -135,17 +135,16 @@ def generate_word_report(engin_data, selected, figs, descriptions, metrics, pred
     return buffer
 
 # Function to generate chatbot response using OpenAI
-openai.api_key = "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"
-
 def generate_response(prompt, context_data):
     try:
+        # Prepare context with data summary
         data_summary = (
             f"Les données concernent les engins R1600. Coût total: {context_data['Montant'].sum():,.0f} MAD, "
             f"nombre d'interventions: {len(context_data)}, "
             f"catégorie principale: {context_data.groupby('Desc_Cat')['Montant'].sum().idxmax()}. "
             "Demandez des détails sur les coûts, catégories, ou engins spécifiques."
         )
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "Vous êtes un assistant analysant des données sur les engins R1600. Fournissez des réponses précises et concises basées sur les données fournies."},
@@ -153,9 +152,10 @@ def generate_response(prompt, context_data):
             ],
             max_tokens=200
         )
-        return response.choices[0].message['content'].strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         return f"Erreur: {str(e)}"
+
 # Configuration de la page
 st.set_page_config(layout="wide", page_title="Analyse des Engins R1600")
 
@@ -267,14 +267,14 @@ def load_data():
         # Liste des engins spécifiques à analyser
         engins_cibles = [
             'CHARGEUSE CATERPILLAR 10T   R1600 Nｰ14 DS',
-            'CHARGEUSE CATERPILAR R 1600H Nｰ15 DS',
-            'Chargeuse CATERPILAR 10T  R1600 Nｰ16',
-            'Chargeuse Caterpillar 10T R1600 Nｰ17',
+            'CHARGEUSE CATERPILLAR R 1600H Nｰ15 DS',
+            'Chargeuse CATERPILLAR 10T  R1600 Nｰ16',
+            'Chargeuse CATERPILLAR 10T R1600 Nｰ17',
             'Chargeuse  CAT    R1600 10T  Nｰ18',                
-            'CHARGEUSE CATERPILAR R 1600 Nｰ20',
-            'CHARGEUSE CATERPILAR R 1600 Nｰ21',
-            'CHARGEUSE CATERPILLARD R1600 Nｰ22',
-            'CHARGEUSE CATERPILLARD R1600 Nｰ23'
+            'CHARGEUSE CATERPILLAR R 1600 Nｰ20',
+            'CHARGEUSE CATERPILLAR R 1600 Nｰ21',
+            'CHARGEUSE CATERPILLAR R1600 Nｰ22',
+            'CHARGEUSE CATERPILLAR R1600 Nｰ23'
         ]
         
         # Filtrer uniquement les engins cibles
