@@ -10,8 +10,8 @@ import plotly.io as pio
 from PIL import Image
 import openai
 
-# Initialize OpenAI client
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+# Initialize OpenAI client with provided API key
+openai.api_key = "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"
 
 # Cache expensive computations
 @st.cache_data
@@ -302,7 +302,7 @@ if df is None or df.empty:
 # =============================================
 st.markdown("""
 <div style='background-color:#e3f2fd; padding:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
-    <h1 style='color:#F28C38; text-align:center; margin-top:0;'>📊 Analyse des Engins R1600</h1>
+    <h1 style='color:#F28C38; text-align:center; margin-top:0;'>📊 Analyse des Eng ASSISTANT: ins R1600</h1>
     <p style='color:#424242; text-align:center;'>Suivi des coûts et des interventions pour optimiser la gestion des chargeuses</p>
 </div>
 """, unsafe_allow_html=True)
@@ -313,7 +313,7 @@ with kpi_container:
     with kpi1:
         st.markdown(f"""
         <div style='background-color:#fff8e1; padding:15px; border-radius:10px; text-align:center;'>
-            <h6 style='color:#F28C38; margin-bottom:10px;'>Coût total</h4>
+            <h6 style='color:#F28C38; margin-bottom:10px;'>Coût total</h6>
             <p style='color:#424242; font-size:18px; font-weight:bold;'>{df['Montant'].sum():,.0f} MAD</p>
             <p style='color:#424242; font-size:12px;'>Somme totale des dépenses</p>
         </div>
@@ -322,7 +322,7 @@ with kpi_container:
         top_engine = df.groupby('Engin_Formaté')['Montant'].sum().idxmax()
         st.markdown(f"""
         <div style='background-color:#e8f5e9; padding:15px; border-radius:10px; text-align:center;'>
-            <h6 style='color:#F28C38; margin-bottom:10px;'>Engin le plus coûteux</h4>
+            <h6 style='color:#F28C38; margin-bottom:10px;'>Engin le plus coûteux</h6>
             <p style='color:#424242; font-size:18px; font-weight:bold;'>{top_engine.split('-')[-1]}</p>
             <p style='color:#424242; font-size:12px;'>Numéro de l'engin</p>
         </div>
@@ -331,7 +331,7 @@ with kpi_container:
         top_category = df.groupby('Desc_Cat')['Montant'].sum().idxmax()
         st.markdown(f"""
         <div style='background-color:#f3e5f5; padding:15px; border-radius:10px; text-align:center;'>
-            <h6 style='color:#F28C38; margin-bottom:10px;'>Catégorie principale</h4>
+            <h6 style='color:#F28C38; margin-bottom:10px;'>Catégorie principale</h6>
             <p style='color:#424242; font-size:18px; font-weight:bold;'>{top_category}</p>
             <p style='color:#424242; font-size:12px;'>Dépense dominante</p>
         </div>
@@ -340,7 +340,7 @@ with kpi_container:
         avg_cost = df['Montant'].mean()
         st.markdown(f"""
         <div style='background-color:#ffebee; padding:15px; border-radius:10px; text-align:center;'>                                                                                                      
-            <h6 style='color:#F28C38; margin-bottom:10px;'>Coût moyen</h4>
+            <h6 style='color:#F28C38; margin-bottom:10px;'>Coût moyen</h6>
             <p style='color:#424242; font-size:18px; font-weight:bold;'>{avg_cost:,.0f} MAD</p>
             <p style='color:#424242; font-size:12px;'>Par intervention</p>
         </div>
@@ -412,11 +412,9 @@ if 'Montant' not in filtered_data.columns:
     st.stop()
 
 # =============================================
-# SECTION 3 : ONGLETS PRINCIPAUX
-# =============================================
+# SECTION 3 : ONGLETS PRничества
 tab1, tab2, tab3, tab4 = st.tabs(["📋 Données", "📊 Analyse", "🔄 Comparaisons", "💡 Recommandations"])
 
-# Onglet 1 : Données
 with tab1:
     st.markdown("""
     <div style='background-color:#e8f5e9; padding:20px; border-radius:10px; border-left:5px solid #388e3c; margin-bottom:20px;'>
@@ -677,7 +675,7 @@ with tab2:
                 'ci_lower': ci_lower,
                 'ci_upper': ci_upper,
                 'reliability': reliability,
-                'trend': trend
+                'trend': 'Stable'  # Assuming stable trend as default
             }
 
             st.markdown(f"""
@@ -685,7 +683,7 @@ with tab2:
                 <p><strong>Estimation moyenne :</strong> {avg:,.0f} MAD/mois</p>
                 <p><strong>Intervalle de confiance (95%) :</strong> {ci_lower:,.0f} - {ci_upper:,.0f} MAD</p>
                 <p><strong>Fiabilité des prévisions :</strong> {reliability:.0f}%</p>
-                <p><strong>Tendance récente :</strong> {trend}</p>
+                <p><strong>Tendance récente :</strong> {predictions['trend']}</p>
             </div>
             """, unsafe_allow_html=True)
             st.progress(int(reliability), "Fiabilité des prévisions")
@@ -771,6 +769,7 @@ with tab3:
     with col1:
         st.markdown("""
         <div style='background-color:#fff8e1; padding:15px; border-radius:10px; border-left:5px solid #ffa000; margin-bottom:10px;'>
+            <h3 style='background-color:#fff8e1; padding:15px; border-radius:10px; border-left:5px solid #ffa000; margin-bottom:10px;'>
             <h3 style='color:#F28C38; margin-top:0;'>Coût total par engin</h3>
         </div>
         """, unsafe_allow_html=True)
