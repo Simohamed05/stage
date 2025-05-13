@@ -8,6 +8,10 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from io import BytesIO
 import plotly.io as pio
 from PIL import Image
+import openai
+
+# Initialize OpenAI client
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # Cache expensive computations
 @st.cache_data
@@ -122,22 +126,129 @@ def generate_word_report(engin_data, selected, figs, descriptions, metrics, pred
     buffer.seek(0)
     return buffer
 
+# Function to generate chatbot response using OpenAI
+def generate_response(prompt, context_data):
+    try:
+        # Prepare context with data summary
+        data_summary = (
+            f"Les données concernent les engins R1600. Coût total: {context_data['Montant'].sum():,.0f} MAD, "
+            f"nombre d'interventions: {len(context_data)}, "
+            f"catégorie principale: {context_data.groupby('Desc_Cat')['Montant'].sum().idxmax()}. "
+            "Demandez des détails sur les coûts, catégories, ou engins spécifiques."
+        )
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Vous êtes un assistant analysant des données sur les engins R1600. Fournissez des réponses précises et concises basées sur les données fournies."},
+                {"role": "user", "content": f"{data_summary}\nQuestion: {prompt}"}
+            ],
+            max_tokens=200
+        )
+        return response.choices[0].message["content"].strip()
+    except Exception as e:
+        return f"Erreur: {str(e)}"
 
 # Configuration de la page
 st.set_page_config(layout="wide", page_title="Analyse des Engins R1600")
+
+# Custom CSS for floating chatbot icon and container
+st.markdown("""
+<style>
+.chatbot-icon {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #F28C38;
+    color: white;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    cursor: pointer;
+    font-size: 24px;
+    z-index: 1000;
+}
+.chatbot-container {
+    position: fixed;
+    bottom: 90px;
+    right: 20px;
+    width: 350px;
+    max-height: 500px;
+    background-color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    display: none;
+    flex-direction: column;
+    z-index: 1000;
+    overflow: hidden;
+}
+.chatbot-container.open {
+    display: flex;
+}
+.chatbot-header {
+    background-color: #F28C38;
+    color: white;
+    padding: 10px;
+    font-weight: bold;
+}
+.chatbot-messages {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 10px;
+    background-color: #f5f5f5;
+}
+.chatbot-input {
+    border-top: 1px solid #ddd;
+    padding: 10px;
+    background-color: white;
+}
+.chatbot-input input {
+    width: 100%;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 8px;
+    font-size: 14px;
+}
+.stChatMessage {
+    margin-bottom: 10px;
+}
+.stChatMessage.user {
+    text-align: right;
+}
+.stChatMessage.user > div {
+    background-color: #F28C38;
+    color: white;
+    display: inline-block;
+    padding: 8px 12px;
+    border-radius: 10px;
+    max-width: 80%;
+}
+.stChatMessage.assistant > div {
+    background-color: #e0e0e0;
+    display: inline-block;
+    padding: 8px 12px;
+    border-radius: 10px;
+    max-width: 80%;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Initialize session state for chatbot
+if "chat_open" not in st.session_state:
+    st.session_state.chat_open = False
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = [
+        {"role": "assistant", "content": "Bonjour ! Posez vos questions sur les engins R1600 ou les données du tableau de bord."}
+    ]
 
 # Charger les données
 @st.cache_data
 def load_data():
     try:
         df = pd.read_excel('engins2.xlsx', sheet_name='BASE DE DONNEE')
-        
-        # Debug: Print column names
-        
-        # Vérifier si 'Montant' existe
-        if 'Montant' not in df.columns:
-            st.error("Erreur : La colonne 'Montant' est introuvable dans le fichier Excel. Colonnes disponibles : " + str(df.columns.tolist()))
-            return None
         
         # Nettoyage des données
         df['Desc_CA'] = df['Desc_CA'].str.replace('', '').str.strip()
@@ -165,7 +276,7 @@ def load_data():
         df['Numéro_Engin'] = df['Desc_CA'].str.extract(r'Nｰ(\d+)')
         df['Engin_Formaté'] = 'R1600-' + df['Numéro_Engin']
         
-        # Mois en français (conservé pour les analyses)
+        # Mois en français
         months_fr = {
             'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
             'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
@@ -269,8 +380,6 @@ with st.sidebar:
         filtered_data = filtered_data[(filtered_data['Date'].dt.date >= start_date) & 
                                     (filtered_data['Date'].dt.date <= end_date)]
     
-    # Debug: Vérifier les colonnes de filtered_data
-    
     # Vérifier si 'Montant' existe dans filtered_data
     if 'Montant' not in filtered_data.columns:
         st.error("Erreur : La colonne 'Montant' est introuvable dans les données filtrées. Colonnes disponibles : " + str(filtered_data.columns.tolist()))
@@ -359,8 +468,6 @@ with tab1:
                 mime='application/vnd.ms-excel'
             )
 
-# Onglet 2 : Analyse
-# Onglet 2 : Analyse
 # Onglet 2 : Analyse
 with tab2:
     # Select engin for analysis
@@ -565,14 +672,6 @@ with tab2:
             ci_lower = avg - 1.96 * std / np.sqrt(len(last_3)) if std > 0 else avg * 0.7
             ci_upper = avg + 1.96 * std / np.sqrt(len(last_3)) if std > 0 else avg * 1.3
 
-            trend = "Stable"
-            if len(last_3) >= 2:
-                diff = last_3.iloc[-1] - last_3.iloc[-2]
-                if diff > 0.1 * avg:
-                    trend = "En hausse"
-                elif diff < -0.1 * avg:
-                    trend = "En baisse"
-
             predictions = {
                 'avg': avg,
                 'ci_lower': ci_lower,
@@ -628,9 +727,15 @@ with tab2:
 
     if not engin_data.empty:
         # CSV Export
-        
+        csv = engin_data.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Télécharger CSV",
+            data=csv,
+            file_name=f'analyse_{selected}.csv',
+            mime='text/csv'
+        )
         # Word Export
-        budget_threshold = 10000  # Définir une valeur par défaut ou demander à l'utilisateur
+        budget_threshold = 10000
         if st.button("📝 Exporter Rapport Word"):
             word_buffer = generate_word_report(
                 engin_data, selected, figs, descriptions, metrics, predictions, budget_threshold
@@ -641,6 +746,7 @@ with tab2:
                 file_name=f'rapport_analyse_{selected}.docx',
                 mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
             )
+
 # Onglet 3 : Comparaisons
 with tab3:
     st.markdown("""
@@ -791,3 +897,40 @@ with tab4:
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+# Chatbot Functionality
+def toggle_chat():
+    st.session_state.chat_open = not st.session_state.chat_open
+
+# Floating chatbot icon (using st.button instead of JavaScript)
+if st.button("💬", key="chat_toggle", help="Ouvrir/Fermer le chatbot"):
+    toggle_chat()
+
+# Chatbot container
+chat_class = "chatbot-container open" if st.session_state.chat_open else "chatbot-container"
+with st.container():
+    st.markdown(f'<div class="{chat_class}">', unsafe_allow_html=True)
+    st.markdown('<div class="chatbot-header">Chatbot R1600</div>', unsafe_allow_html=True)
+    
+    # Messages container
+    with st.container():
+        st.markdown('<div class="chatbot-messages">', unsafe_allow_html=True)
+        for message in st.session_state.chat_messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Input container
+    with st.container():
+        st.markdown('<div class="chatbot-input">', unsafe_allow_html=True)
+        if prompt := st.chat_input("Posez votre question...", key="chat_input"):
+            # Append user message
+            st.session_state.chat_messages.append({"role": "user", "content": prompt})
+            # Generate and append assistant response
+            response = generate_response(prompt, df)
+            st.session_state.chat_messages.append({"role": "assistant", "content": response})
+            # Rerun to update the chat display
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
