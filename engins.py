@@ -8,17 +8,14 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from io import BytesIO
 import plotly.io as pio
 from PIL import Image
-import openai
-import httpx
+import google.generativeai as genai
 
-# Initialize OpenAI client with provided API key and no proxies
+# Initialize Gemini API with key from secrets
 try:
-    client = openai.OpenAI(
-        api_key="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",
-        http_client=httpx.Client(proxies={})  # Explicitly disable proxies
-    )
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 except Exception as e:
-    st.error(f"Erreur lors de l'initialisation du client OpenAI : {str(e)}")
+    st.error(f"Erreur lors de l'initialisation du client Gemini : {str(e)}")
     st.stop()
 
 # Cache expensive computations
@@ -134,7 +131,7 @@ def generate_word_report(engin_data, selected, figs, descriptions, metrics, pred
     buffer.seek(0)
     return buffer
 
-# Function to generate chatbot response using OpenAI
+# Function to generate chatbot response using Gemini API
 def generate_response(prompt, context_data):
     try:
         # Prepare context with data summary
@@ -144,15 +141,15 @@ def generate_response(prompt, context_data):
             f"catégorie principale: {context_data.groupby('Desc_Cat')['Montant'].sum().idxmax()}. "
             "Demandez des détails sur les coûts, catégories, ou engins spécifiques."
         )
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Vous êtes un assistant analysant des données sur les engins R1600. Fournissez des réponses précises et concises basées sur les données fournies."},
-                {"role": "user", "content": f"{data_summary}\nQuestion: {prompt}"}
-            ],
-            max_tokens=200
-        )
-        return response.choices[0].message.content.strip()
+        # Create a chat session with Gemini
+        chat = gemini_model.start_chat(history=[
+            {"role": "user", "parts": [
+                "Vous êtes un assistant analysant des données sur les engins R1600. Fournissez des réponses précises et concises basées sur les données fournies."
+            ]},
+            {"role": "model", "parts": ["Compris ! Je fournirai des réponses précises basées sur les données des engins R1600. Posez vos questions !"]}])
+        # Send the prompt with context
+        response = chat.send_message(f"{data_summary}\nQuestion: {prompt}", generation_config={"max_output_tokens": 200})
+        return response.text.strip()
     except Exception as e:
         return f"Erreur: {str(e)}"
 
