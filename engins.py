@@ -11,7 +11,7 @@ from PIL import Image
 import openai
 
 # Initialize OpenAI client with provided API key
-openai.api_key = "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"
+client = openai.OpenAI(api_key="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")
 
 # Cache expensive computations
 @st.cache_data
@@ -136,7 +136,7 @@ def generate_response(prompt, context_data):
             f"catégorie principale: {context_data.groupby('Desc_Cat')['Montant'].sum().idxmax()}. "
             "Demandez des détails sur les coûts, catégories, ou engins spécifiques."
         )
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "Vous êtes un assistant analysant des données sur les engins R1600. Fournissez des réponses précises et concises basées sur les données fournies."},
@@ -758,7 +758,7 @@ with tab2:
 # Onglet 3 : Comparaisons
 with tab3:
     st.markdown("""
-    <div style='background-color:#e3f2fd; tremendous:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
+    <div style='background-color:#e3f2fd; padding:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
         <h2 style='color:#F28C38; margin-top:0;'>Comparaisons entre engins</h2>
         <p style='color:#424242;'>Analyse des coûts par engin et catégorie</p>
     </div>
