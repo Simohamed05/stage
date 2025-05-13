@@ -136,7 +136,7 @@ def generate_response(prompt, context_data):
             f"catégorie principale: {context_data.groupby('Desc_Cat')['Montant'].sum().idxmax()}. "
             "Demandez des détails sur les coûts, catégories, ou engins spécifiques."
         )
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "Vous êtes un assistant analysant des données sur les engins R1600. Fournissez des réponses précises et concises basées sur les données fournies."},
@@ -144,7 +144,7 @@ def generate_response(prompt, context_data):
             ],
             max_tokens=200
         )
-        return response.choices[0].message["content"].strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         return f"Erreur: {str(e)}"
 
@@ -302,7 +302,7 @@ if df is None or df.empty:
 # =============================================
 st.markdown("""
 <div style='background-color:#e3f2fd; padding:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
-    <h1 style='color:#F28C38; text-align:center; margin-top:0;'>📊 Analyse des Eng ASSISTANT: ins R1600</h1>
+    <h1 style='color:#F28C38; text-align:center; margin-top:0;'>📊 Analyse des Engins R1600</h1>
     <p style='color:#424242; text-align:center;'>Suivi des coûts et des interventions pour optimiser la gestion des chargeuses</p>
 </div>
 """, unsafe_allow_html=True)
@@ -412,9 +412,11 @@ if 'Montant' not in filtered_data.columns:
     st.stop()
 
 # =============================================
-# SECTION 3 : ONGLETS PRничества
+# SECTION 3 : ONGLETS PRINCIPAUX
+# =============================================
 tab1, tab2, tab3, tab4 = st.tabs(["📋 Données", "📊 Analyse", "🔄 Comparaisons", "💡 Recommandations"])
 
+# Onglet 1 : Données
 with tab1:
     st.markdown("""
     <div style='background-color:#e8f5e9; padding:20px; border-radius:10px; border-left:5px solid #388e3c; margin-bottom:20px;'>
@@ -669,13 +671,21 @@ with tab2:
             reliability = max(50, reliability)
             ci_lower = avg - 1.96 * std / np.sqrt(len(last_3)) if std > 0 else avg * 0.7
             ci_upper = avg + 1.96 * std / np.sqrt(len(last_3)) if std > 0 else avg * 1.3
+            # Determine trend based on last 3 months
+            trend = 'Stable'
+            if len(last_3) >= 2:
+                trend_values = last_3.values
+                if trend_values[-1] > trend_values[-2] * 1.1:
+                    trend = 'Hausse'
+                elif trend_values[-1] < trend_values[-2] * 0.9:
+                    trend = 'Baisse'
 
             predictions = {
                 'avg': avg,
                 'ci_lower': ci_lower,
                 'ci_upper': ci_upper,
                 'reliability': reliability,
-                'trend': 'Stable'  # Assuming stable trend as default
+                'trend': trend
             }
 
             st.markdown(f"""
@@ -683,7 +693,7 @@ with tab2:
                 <p><strong>Estimation moyenne :</strong> {avg:,.0f} MAD/mois</p>
                 <p><strong>Intervalle de confiance (95%) :</strong> {ci_lower:,.0f} - {ci_upper:,.0f} MAD</p>
                 <p><strong>Fiabilité des prévisions :</strong> {reliability:.0f}%</p>
-                <p><strong>Tendance récente :</strong> {predictions['trend']}</p>
+                <p><strong>Tendance récente :</strong> {trend}</p>
             </div>
             """, unsafe_allow_html=True)
             st.progress(int(reliability), "Fiabilité des prévisions")
@@ -748,7 +758,7 @@ with tab2:
 # Onglet 3 : Comparaisons
 with tab3:
     st.markdown("""
-    <div style='background-color:#e3f2fd; padding:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
+    <div style='background-color:#e3f2fd; tremendous:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
         <h2 style='color:#F28C38; margin-top:0;'>Comparaisons entre engins</h2>
         <p style='color:#424242;'>Analyse des coûts par engin et catégorie</p>
     </div>
@@ -769,7 +779,6 @@ with tab3:
     with col1:
         st.markdown("""
         <div style='background-color:#fff8e1; padding:15px; border-radius:10px; border-left:5px solid #ffa000; margin-bottom:10px;'>
-            <h3 style='background-color:#fff8e1; padding:15px; border-radius:10px; border-left:5px solid #ffa000; margin-bottom:10px;'>
             <h3 style='color:#F28C38; margin-top:0;'>Coût total par engin</h3>
         </div>
         """, unsafe_allow_html=True)
