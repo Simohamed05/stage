@@ -431,7 +431,7 @@ with tab2:
             "Les fourchettes haute et basse indiquent une variabilité potentielle de ±30%, permettant "
             "d'anticiper les tendances futures."
         )
-        st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc1}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#ffffff; font-size:14px;'>{desc1}</p>", unsafe_allow_html=True)
         figs.append(fig1)
         descriptions.append(desc1)
 
@@ -455,7 +455,7 @@ with tab2:
             "les montants les plus fréquents et les valeurs aberrantes (outliers). Cela aide à identifier "
             "les interventions coûteuses pour optimiser la gestion budgétaire."
         )
-        st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc2}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#ffffff; font-size:14px;'>{desc2}</p>", unsafe_allow_html=True)
         figs.append(fig2)
         descriptions.append(desc2)
 
@@ -475,7 +475,7 @@ with tab2:
             "Ce graphique montre la répartition des dépenses par catégorie, permettant d'identifier "
             "les principales sources de coûts et de prioriser les efforts de réduction des dépenses."
         )
-        st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc3}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#ffffff; font-size:14px;'>{desc3}</p>", unsafe_allow_html=True)
         figs.append(fig3)
         descriptions.append(desc3)
 
@@ -499,7 +499,7 @@ with tab2:
             "Ce graphique à barres montre les dépenses mensuelles, mettant en évidence les variations "
             "saisonnières ou les pics de coûts, utiles pour planifier les budgets mensuels."
         )
-        st.markdown(f"<p style='color:#424242; font-size:14px;'>{desc4}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#ffffff; font-size:14px;'>{desc4}</p>", unsafe_allow_html=True)
         figs.append(fig4)
         descriptions.append(desc4)
 
@@ -535,7 +535,7 @@ with tab2:
                 'Variance des coûts': f"{cost_variance:,.0f} MAD²"
             }
             st.markdown(f"""
-            <div style='color:#424242; font-size:14px;'>
+            <div style='color:#ffffff; font-size:14px;'>
                 <p><strong>Dernier mois :</strong> {last_month:,.0f} MAD</p>
                 <p><strong>Moyenne 3 mois :</strong> {avg_3m:,.0f} MAD</p>
                 <p><strong>Coût maximal :</strong> {max_cost:,.0f} MAD</p>
@@ -582,7 +582,7 @@ with tab2:
             }
 
             st.markdown(f"""
-            <div style='color:#424242; font-size:14px;'>
+            <div style='color:#ffffff; font-size:14px;'>
                 <p><strong>Estimation moyenne :</strong> {avg:,.0f} MAD/mois</p>
                 <p><strong>Intervalle de confiance (95%) :</strong> {ci_lower:,.0f} - {ci_upper:,.0f} MAD</p>
                 <p><strong>Fiabilité des prévisions :</strong> {reliability:.0f}%</p>
@@ -628,28 +628,7 @@ with tab2:
 
     if not engin_data.empty:
         # CSV Export
-        summary_data = {
-            'Métrique': ['Coût Total', 'Coût Moyen (3 mois)', 'Coût Maximal', 'Nombre d\'Interventions', 
-                         'Catégorie Principale', 'Coût Médian', 'Variance des Coûts'],
-            'Valeur': [
-                f"{engin_data['Montant'].sum():,.0f} MAD",
-                f"{engin_data.groupby('Mois')['Montant'].sum().tail(3).mean():,.0f} MAD" if len(engin_data.groupby('Mois')) >= 3 else 'N/A',
-                f"{engin_data['Montant'].max():,.0f} MAD",
-                len(engin_data),
-                engin_data.groupby('Desc_Cat')['Montant'].sum().idxmax(),
-                f"{engin_data['Montant'].median():,.0f} MAD",
-                f"{engin_data['Montant'].var():,.0f} MAD²" if len(engin_data) > 1 else '0 MAD²'
-            ]
-        }
-        summary_df = pd.DataFrame(summary_data)
-        csv = summary_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="Télécharger Rapport CSV",
-            data=csv,
-            file_name=f'rapport_analyse_{selected}.csv',
-            mime='text/csv'
-        )
-
+        
         # Word Export
         budget_threshold = 10000  # Définir une valeur par défaut ou demander à l'utilisateur
         if st.button("📝 Exporter Rapport Word"):
