@@ -16,33 +16,133 @@ import os
 st.set_page_config(page_title="Tableau de bord de la consommation des équipements miniers", layout="wide")
 st.markdown("""
     <style>
+    /* Fond d'écran clair */
     .stApp { 
-        background-image: url("https://img.freepik.com/premium-photo/underground-mining-truck_873668-11862.jpg"); 
-        background-size: cover; 
-        background-repeat: no-repeat; 
+        background-color: #f5f7fa;
+        background-image: none;
     }
-    .stApp > div { 
-        padding: 20px; 
-        border-radius: 10px; 
+    
+    /* Conteneurs principaux */
+    .main-container {
+        background-color: white;
+        padding: 25px; 
+        border-radius: 12px; 
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
     }
-    h1, h2, h3 { 
-        color: #003087; 
-        font-family: Arial, sans-serif; 
+    
+    /* Titres */
+    h1, h2, h3, h4, h5, h6 { 
+        color: #2c3e50; 
+        font-family: 'Segoe UI', Arial, sans-serif;
     }
-    .stMetric { 
-        background-color: #Ff7f00; 
-        border-left: 5px solid #FFC107; 
-        padding: 10px; 
-        border-radius: 5px; 
+    h1 {
+        border-bottom: 2px solid #3498db;
+        padding-bottom: 10px;
     }
-    .stButton>button { 
-        background-color: #003087; 
+    
+    /* Cartes de métriques */
+    .metric-card {
+        background-color: white;
+        border-left: 4px solid #3498db; 
+        padding: 18px; 
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        margin-bottom: 15px;
+    }
+    .metric-title {
+        color: #7f8c8d;
+        font-size: 18px;
+        margin-bottom: 5px;
+    }
+    .metric-value {
+        color: #2c3e50;
+        font-size: 30px;
+        font-weight: bold;
+    }
+    
+    /* Boutons */
+    .stButton>button {
+        background-color: #3498db; 
         color: white; 
-        border-radius: 5px; 
+        border-radius: 8px; 
+        border: none;
+        padding: 8px 18px;
+        font-weight: 500;
+        transition: all 0.3s;
     }
-    .stButton>button:hover { 
-        background-color: #FFC107; 
-        color: black; 
+    .stButton>button:hover {
+        background-color: #2980b9; 
+        color: white; 
+        box-shadow: 0 4px 8px rgba(41,128,185,0.2);
+        transform: translateY(-1px);
+    }
+    
+    /* Sidebar */
+    .css-1d391kg {
+        background-color: white;
+        box-shadow: 2px 0 15px rgba(0,0,0,0.05);
+    }
+    .sidebar .sidebar-content {
+        background-color: white;
+    }
+    
+    /* Onglets */
+    .stTabs [role="tablist"] button {
+        color: #7f8c8d;
+        font-weight: 500;
+        padding: 8px 16px;
+    }
+    .stTabs [role="tablist"] button[aria-selected="true"] {
+        color: #3498db;
+        border-bottom: 3px solid #3498db;
+        background-color: rgba(52,152,219,0.1);
+    }
+    
+    /* Tableaux */
+    .stDataFrame {
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    
+    /* Inputs */
+    .stTextInput>div>div>input, 
+    .stSelectbox>div>div>select,
+    .stDateInput>div>div>input,
+    .stMultiSelect>div>div>select {
+        border: 1px solid #dfe6e9;
+        border-radius: 8px;
+        padding: 10px 12px;
+    }
+    
+    /* Couleurs spécifiques */
+    .primary-color {
+        color: #3498db;
+    }
+    .secondary-color {
+        color: #2c3e50;
+    }
+    .accent-color {
+        color: #e74c3c;
+    }
+    
+    /* Header */
+    .header-container {
+        background: linear-gradient(135deg, #3498db 0%, #2c3e50 100%);
+        padding: 25px;
+        border-radius: 10px;
+        margin-bottom: 25px;
+        color: white;
+    }
+    
+    /* Cards */
+    .analysis-card {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+        border-top: 4px solid #3498db;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -66,26 +166,43 @@ def check_password(password, hashed):
 
 # Chargement des données
 @st.cache_data
-def load_data():
-    df = pd.read_excel("engins2.xlsx")
-    if not all(col in df.columns for col in ['Date', 'CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant']):
-        st.error("Fichier engins2.xlsx manquant des colonnes requises.")
+def load_data(uploaded_file=None):
+    try:
+        if uploaded_file is not None:
+            df = pd.read_excel(uploaded_file)
+        else:
+            df = pd.read_excel("engins2.xlsx")
+        
+        # Vérification des colonnes requises
+        required_columns = ['Date', 'CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant']
+        if not all(col in df.columns for col in required_columns):
+            st.error(f"Le fichier doit contenir les colonnes suivantes : {', '.join(required_columns)}")
+            st.stop()
+        
+        # Conversion de la colonne Date
+        if pd.api.types.is_numeric_dtype(df['Date']):
+            df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
+        elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
+            df['Date'] = pd.to_datetime(df['Date'])
+        
+        # Nettoyage des données
+        df = df.dropna(subset=['CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant'])
+        df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
+        df['Mois'] = df['Date'].dt.month_name()
+        
+        # Traduction des mois en français
+        months_fr = {
+            'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
+            'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
+            'July': 'Juillet', 'August': 'Août', 'September': 'Septembre',
+            'October': 'Octobre', 'November': 'Novembre', 'December': 'Décembre'
+        }
+        df['Mois'] = df['Mois'].map(months_fr)
+        
+        return df
+    except Exception as e:
+        st.error(f"Erreur lors du chargement du fichier : {str(e)}")
         st.stop()
-    if pd.api.types.is_numeric_dtype(df['Date']):
-        df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
-    elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
-        df['Date'] = pd.to_datetime(df['Date'])
-    df = df.dropna(subset=['CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant'])
-    df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
-    df['Mois'] = df['Date'].dt.month_name()
-    months_fr = {
-        'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
-        'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
-        'July': 'Juillet', 'August': 'Août', 'September': 'Septembre',
-        'October': 'Octobre', 'November': 'Novembre', 'December': 'Décembre'
-    }
-    df['Mois'] = df['Mois'].map(months_fr)
-    return df
 
 # Calculs en cache
 @st.cache_data
@@ -103,7 +220,7 @@ def compute_category_breakdown(data):
 # Fonction pour générer le rapport Word
 @st.cache_data
 def generate_word_report(filtered_data, total_cost, global_avg, category_stats, most_consumed_per_cat, 
-                        pivot_engine, selected_engine, table_df, total_montant, figures):
+                        pivot_engine, selected_engines, table_df, total_montant, figures):
     doc = Document()
     
     # Titre et métadonnées
@@ -182,8 +299,8 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
     
     # Tableau pivot
     if not pivot_engine.empty:
-        doc.add_heading(f'Détail des consommations pour {selected_engine}', level=2)
-        doc.add_paragraph(f"Tableau détaillant les différents types de consommation pour chaque équipement de type {selected_engine}.")
+        doc.add_heading(f'Détail des consommations pour {", ".join(selected_engines) if selected_engines else "toutes les catégories"}', level=2)
+        doc.add_paragraph(f"Tableau détaillant les différents types de consommation pour chaque équipement des catégories sélectionnées.")
         
         table = doc.add_table(rows=pivot_engine.shape[0]+1, cols=pivot_engine.shape[1]+1)
         table.style = 'Table Grid'
@@ -272,9 +389,9 @@ if 'logged_in' not in st.session_state:
 # Interface de connexion/inscription
 if not st.session_state.logged_in:
     st.markdown("""
-    <div style='background-color:#424242; padding:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
-        <h1 style='color:#F28C38; text-align:center; margin-top:0;'>Bienvenue</h1>
-        <p style='color:#FFFFFF; text-align:center;'>Veuillez vous connecter ou créer un compte pour accéder au tableau de bord</p>
+    <div class='header-container'>
+        <h1 style='color: white; text-align:center; margin-top:0;'>Bienvenue</h1>
+        <p style='color: white; text-align:center;'>Veuillez vous connecter ou créer un compte pour accéder au tableau de bord</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -327,22 +444,32 @@ if not st.session_state.logged_in:
                     st.rerun()
 
 else:
-    # Chargement des données
-    df = load_data()
-
-    # Barre latérale pour les filtres
+    # Barre latérale pour les filtres et importation
     with st.sidebar:
         # Bouton de déconnexion
+        st.markdown(f"""
+        <div style='margin-bottom:20px;'>
+            <h3 style='color:#2c3e50;'>Connecté en tant que {st.session_state.username}</h3>
+        </div>
+        """, unsafe_allow_html=True)
         if st.button("Déconnexion", key="logout"):
             st.session_state.logged_in = False
             st.session_state.username = None
             st.session_state.page = 'login'
             st.rerun()
 
+        # Importation des données
+        st.subheader("Importer des données")
+        uploaded_file = st.file_uploader("Téléverser un fichier Excel", type=["xlsx"], key="file_uploader")
+        
+        # Charger les données
+        df = load_data(uploaded_file)
+
+        # Filtres
         st.subheader("Filtres")
         st.subheader("Plage de dates")
-        default_start = df['Date'].min().date()
-        default_end = df['Date'].max().date()
+        default_start = df['Date'].min().date() if not df.empty else datetime.today().date()
+        default_end = df['Date'].max().date() if not df.empty else datetime.today().date()
         date_range = st.date_input(
             "Période",
             value=(default_start, default_end),
@@ -361,10 +488,7 @@ else:
             st.warning("Aucun équipement ne correspond au terme de recherche.")
         selected_equipment = st.selectbox("Sélectionner l'équipement", equipment_options)
         
-        st.subheader("Type d'engin")
-        engine_types = sorted(df['CATEGORIE'].unique())
-        selected_engine = st.selectbox("Sélectionner le type d'engin", engine_types, key="engine_type_select")
-
+        
     # Filtrer les données
     filtered_data = df.copy()
     if len(date_range) == 2:
@@ -441,11 +565,23 @@ else:
                     )
                     figures[f"Consommation par équipement ({cat})"] = fig_cat
                 
-                # Préparer la table pivot
+                # Préparer la table pivot pour le rapport
                 pivot_engine = pd.DataFrame()
-                if not filtered_data.empty and selected_engine:
+                selected_engines = st.session_state.get('selected_engines', [])  # Get from session state
+                if not filtered_data.empty and selected_engines and selected_engines != ["Tous les types"]:
                     pivot_engine = pd.pivot_table(
-                        filtered_data[filtered_data['CATEGORIE'] == selected_engine],
+                        filtered_data[filtered_data['CATEGORIE'].isin(selected_engines)],
+                        values='Montant',
+                        index='Desc_CA',
+                        columns='Desc.walkthrough',
+                        aggfunc='sum',
+                        fill_value=0,
+                        margins=True,
+                        margins_name='Total'
+                    ).round(2)
+                elif not filtered_data.empty:
+                    pivot_engine = pd.pivot_table(
+                        filtered_data,
                         values='Montant',
                         index='Desc_CA',
                         columns='Desc_Cat',
@@ -475,7 +611,7 @@ else:
                     category_stats,
                     most_consumed_per_cat,
                     pivot_engine,
-                    selected_engine,
+                    selected_engines,
                     table_df,
                     total_montant,
                     figures
@@ -484,7 +620,7 @@ else:
                 # Téléchargement
                 st.session_state['report_buffer'] = report
                 st.write("Filtered data rows:", filtered_data.shape[0])
-                st.write("Selected engine:", selected_engine)
+                st.write("Selected engines:", selected_engines)
                 st.success("Rapport généré avec succès!")
         
         if 'report_buffer' in st.session_state:
@@ -497,9 +633,9 @@ else:
             )
 
     st.markdown("""
-    <div style='background-color:#424242; padding:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
-        <h1 style='color:#F28C38; text-align:center; margin-top:0;'>📊 Tableau De Bord De La Consommation Des Engins</h1>
-        <p style='color:#FFFFFF; text-align:center;'>Suivre et optimiser la consommation des équipements</p>
+    <div class='header-container'>
+        <h1 style='color: white; text-align:center; margin-top:0;'>📊 Tableau De Bord De La Consommation Des Engins</h1>
+        <p style='color: white; text-align: center; margin-bottom:0'>Suivre et optimiser la consommation des équipements</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -507,16 +643,16 @@ else:
     kpi_container = st.container()
     with kpi_container:
         st.markdown(f"""
-        <div style='background-color:#424242; padding:15px; border-radius:10px; margin-bottom:20px;'>
-            <h3 style='color:#F28C38; margin-top:0;'>Indicateurs globaux</h3>
+        <div class='analysis-card'>
+            <h3 style='color: #2c3e50; margin-top:0;'>Indicateurs globaux</h3>
             <div style='display:flex; justify-content:space-between;'>
-                <div style='width:48%; background-color:#424242; padding:10px; border-radius:5px; border-left:4px solid #1976d2;'>
-                    <p style='color:#FFFFFF; font-size:16px;'><b>Coût total</b></p>
-                    <p style='color:#FFFFFF; font-size:24px; font-weight:bold;'>{total_cost:,.0f} DH</p>
+                <div class='metric-card'>
+                    <p class='metric-title' style='font-size: 20px;'>Coût total</p>
+                    <p class='metric-value'>{total_cost:,.0f} DH</p>
                 </div>
-                <div style='width:48%; background-color:#424242; padding:10px; border-radius:5px; border-left:4px solid #388e3c;'>
-                    <p style='color:#FFFFFF; font-size:16px;'><b>Moyenne globale des engins par jour</b></p>
-                    <p style='color:#FFFFFF; font-size:24px; font-weight:bold;'>{global_avg:,.0f} DH</p>
+                <div class='metric-card'>
+                    <p class='metric-title' style='font-size: 20px;'>Moyenne globale des engins par jour</p>
+                    <p class='metric-value'>{global_avg:,.0f} DH</p>
                 </div>
             </div>
         </div>
@@ -531,21 +667,21 @@ else:
                 most_consumed_desc = most_consumed['Desc_Cat'].iloc[0] if not most_consumed.empty else "Aucune"
                 
                 st.markdown(f"""
-                <div style='background-color:#424242; padding:15px; border-radius:10px; border-left:4px solid #{'1976d2' if idx%2==0 else '388e3c'}; margin-bottom:10px;'>
-                    <h4 style='color:#F28C38; margin-top:0; text-align:center;'>{row['CATEGORIE']}</h4>
+                <div class='metric-card'>
+                    <h4 style='color: #2c3e50; margin-top:0; text-align:center;'>{row['CATEGORIE']}</h4>
                     <div style='display:flex; justify-content:space-between; margin-bottom:5px;'>
-                        <span style='color:#FFFFFF;'>Total:</span>
-                        <span style='color:#FFFFFF; font-weight:bold;'>{row['Total']:,.0f} DH</span>
+                        <span class='metric-title'>Total:</span>
+                        <span class='metric-value'>{row['Total']:,.0f} DH</span>
                     </div>
                     <div style='display:flex; justify-content:space-between; margin-bottom:5px;'>
-                        <span style='color:#FFFFFF;'>Moyenne des engins par jour:</span>
-                        <span style='color:#FFFFFF; font-weight:bold;'>{row['Moyenne']:,.0f} DH</span>
+                        <span class='metric-title'>Moyenne des engins par jour:</span>
+                        <span class='metric-value'>{row['Moyenne']:,.0f} DH</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
         # Pivot table
-        st.markdown("#### Consommation des catégories par type de consommation")
+        st.markdown("<div class='analysis-card'><h3 style='color: #2c3e50;'>Consommation des catégories par type de consommation</h3></div>", unsafe_allow_html=True)
         hist_data = filtered_data.groupby(['CATEGORIE', 'Desc_Cat'])['Montant'].sum().reset_index()
         fig_hist = px.bar(
             hist_data,
@@ -577,7 +713,7 @@ else:
         st.plotly_chart(fig_hist, use_container_width=True, key="category_consumption")
         
         # Pivot table for CATEGORIE vs Desc_Cat
-        st.markdown("#### Consommation totale par type d'engin et catégorie de consommation")
+        st.markdown("<div class='analysis-card'><h3 style='color: #2c3e50;'>Consommation totale par type d'engin et catégorie de consommation</h3></div>", unsafe_allow_html=True)
         pivot_table = pd.pivot_table(
             filtered_data,
             values='Montant',
@@ -590,43 +726,62 @@ else:
         ).round(2)
         st.dataframe(
             pivot_table.style.format("{:,.2f} DH").set_properties(**{
-                'background-color': '#424242',
-                'border': '1px solid #ddd',
+                'background-color': 'white',
+                'border': '1px solid #dfe6e9',
                 'text-align': 'center',
-                'color': '#FFFFFF'
+                'color': '#2c3e50'
             }).set_table_styles([
-                {'selector': 'th', 'props': [('background-color', '#424242'), ('color', '#F28C38'), ('font-weight', 'bold')]}
+                {'selector': 'th', 'props': [('background-color', 'white'), ('color', '#3498db'), ('font-weight', 'bold')]}
             ]),
             use_container_width=True
         )
 
-        # Pivot table for selected CATEGORIE
-        st.markdown("#### Consommation par équipement pour le type d'engin sélectionné")
-        engine_data = filtered_data[filtered_data['CATEGORIE'] == selected_engine]
+        # Pivot table for selected CATEGORIE with CATEGORIE filter
+        st.markdown("<div class='analysis-card'><h3 style='color: #2c3e50;'>Consommation par équipement pour les types d'engin sélectionnés</h3></div>", unsafe_allow_html=True)
+        engine_data = filtered_data.copy()
         if not engine_data.empty:
-            pivot_engine = pd.pivot_table(
-                engine_data,
-                values='Montant',
-                index='Desc_CA',
-                columns='Desc_Cat',
-                aggfunc='sum',
-                fill_value=0,
-                margins=True,
-                margins_name='Total'
-            ).round(2)
-            st.dataframe(
-                pivot_engine.style.format("{:,.2f} DH").set_properties(**{
-                    'background-color': '#424242',
-                    'border': '1px solid #ddd',
-                    'text-align': 'center',
-                    'color': '#FFFFFF'
-                }).set_table_styles([
-                    {'selector': 'th', 'props': [('background-color', '#424242'), ('color', '#F28C38'), ('font-weight', 'bold')]}
-                ]),
-                use_container_width=True
+            # Filtre pour les types d'engin
+            st.markdown("<h4 style='color: #2c3e50;'>Filtrer par type d'engin</h4>", unsafe_allow_html=True)
+            engine_types = ["Tous les types"] + sorted(engine_data['CATEGORIE'].unique())
+            selected_engines = st.multiselect(
+                "Sélectionner les types d'engin",
+                engine_types,
+                default=["Tous les types"],
+                key="engine_type_multiselect"
             )
+            # Store selected_engines in session state for report generation
+            st.session_state['selected_engines'] = selected_engines
+            
+            # Appliquer le filtre sur les types d'engin
+            if "Tous les types" not in selected_engines and selected_engines:
+                engine_data = engine_data[engine_data['CATEGORIE'].isin(selected_engines)]
+            
+            if engine_data.empty:
+                st.warning("Aucune donnée disponible pour les types d'engin sélectionnés.")
+            else:
+                pivot_engine = pd.pivot_table(
+                    engine_data,
+                    values='Montant',
+                    index='Desc_CA',
+                    columns='Desc_Cat',
+                    aggfunc='sum',
+                    fill_value=0,
+                    margins=True,
+                    margins_name='Total'
+                ).round(2)
+                st.dataframe(
+                    pivot_engine.style.format("{:,.2f} DH").set_properties(**{
+                        'background-color': 'white',
+                        'border': '1px solid #dfe6e9',
+                        'text-align': 'center',
+                        'color': '#2c3e50'
+                    }).set_table_styles([
+                        {'selector': 'th', 'props': [('background-color', 'white'), ('color', '#3498db'), ('font-weight', 'bold')]}
+                    ]),
+                    use_container_width=True
+                )
         else:
-            st.warning(f"Aucune donnée disponible pour {selected_engine}.")
+            st.warning("Aucune donnée disponible pour les critères sélectionnés.")
 
     # Onglets
     tabs = st.tabs(
@@ -640,12 +795,12 @@ else:
         with tabs[i]:
             cat_data = filtered_data[filtered_data['CATEGORIE'] == cat]
             st.markdown(f"""
-            <div style='background-color:#424242; padding:20px; border-radius:10px; border-left:5px solid #1976d2; margin-bottom:20px;'>
-                <h2 style='color:#F28C38; margin-top:0;'>Analyse pour la catégorie {cat}</h2>
+            <div class='analysis-card'>
+                <h2 style='color: #2c3e50; margin-top:0;'>Analyse pour la catégorie {cat}</h2>
             </div>
             """, unsafe_allow_html=True)
             
-            st.markdown("#### Consommation par équipement")
+            st.markdown("<h3 style='color: #2c3e50;'>Consommation par équipement</h3>", unsafe_allow_html=True)
             equip_sum = cat_data.groupby('Desc_CA')['Montant'].sum().reset_index().sort_values('Montant', ascending=False)
             fig2 = px.bar(
                 equip_sum,
@@ -671,12 +826,12 @@ else:
     # Analyse comparative
     with tabs[-3]:
         st.markdown("""
-        <div style='background-color:#424242; padding:20px; border-radius:10px; border-left:5px solid #388e3c; margin-bottom:20px;'>
-            <h2 style='color:#F28C38; margin-top:0;'>Analyse comparative</h2>
+        <div class='analysis-card'>
+            <h2 style='color: #2c3e50; margin-top:0;'>Analyse comparative</h2>
         </div>
         """, unsafe_allow_html=True)
         
-        st.markdown("#### Comparaison des catégories")
+        st.markdown("<h3 style='color: #2c3e50;'>Comparaison des catégories</h3>", unsafe_allow_html=True)
         fig_comp = px.bar(
             filtered_data.groupby('CATEGORIE')['Montant'].sum().reset_index(),
             x='CATEGORIE',
@@ -700,29 +855,28 @@ else:
     # Recommandations
     with tabs[-2]:
         st.markdown("""
-        <div style='background-color:#424242; padding:20px; border-radius:10px; border-left:5px solid #8e24aa; margin-bottom:20px;'>
-            <h2 style='color:#F28C38; margin-top:0;'>Recommandations</h2>
+        <div class='analysis-card'>
+            <h2 style='color: #2c3e50; margin-top:0;'>Recommandations</h2>
         </div>
         """, unsafe_allow_html=True)
         
-        st.markdown("#### Catégories prioritaires")
+        st.markdown("<h3 style='color: #2c3e50;'>Catégories prioritaires</h3>", unsafe_allow_html=True)
         top_categories = filtered_data.groupby('CATEGORIE')['Montant'].sum().nlargest(3).reset_index()
         cols = st.columns(3)
-        colors = ['#d32f2f', '#ffa000', '#388e3c']
         for i, (col, (_, row)) in enumerate(zip(cols, top_categories.iterrows())):
             with col:
                 st.markdown(f"""
-                <div style='background-color:#424242; padding:15px; border-radius:10px; border-left:5px solid {colors[i]};'>
-                    <h4 style='color:#F28C38; text-align:center;'>{row['CATEGORIE']}</h4>
-                    <p style='color:#FFFFFF; text-align:center; font-size:24px; font-weight:bold;'>{row['Montant']:,.0f} DH</p>
-                    <p style='color:#FFFFFF; text-align:center;'>{(row['Montant']/total_cost)*100:.1f}% du total</p>
+                <div class='metric-card'>
+                    <h4 style='color: #2c3e50; text-align:center;'>{row['CATEGORIE']}</h4>
+                    <p style='color: #2c3e50; text-align:center; font-size:24px; font-weight:bold;'>{row['Montant']:,.0f} DH</p>
+                    <p style='color: #7f8c8d; text-align:center;'>{(row['Montant']/total_cost)*100:.1f}% du total</p>
                 </div>
                 """, unsafe_allow_html=True)
 
         st.markdown("""
-        <div style='background-color:#424242; padding:20px; border-radius:10px; margin-top:20px;'>
-            <h3 style='color:#F28C38;'>Actions recommandées</h3>
-            <ul style='color:#FFFFFF;'>
+        <div class='analysis-card'>
+            <h3 style='color: #2c3e50;'>Actions recommandées</h3>
+            <ul style='color: #2c3e50;'>
                 <li>Prioriser les analyses des équipements dans les catégories les plus coûteuses</li>
                 <li>Mettre en place un suivi mensuel des consommations par catégorie</li>
                 <li>Comparer les performances des équipements similaires pour identifier les anomalies</li>
@@ -736,42 +890,61 @@ else:
     # Tableau des équipements
     with tabs[-1]:
         st.markdown("""
-        <div style='background-color:#424242; padding:20px; border-radius:10px; border-left:5px solid #388e3c; margin-bottom:20px;'>
-            <h2 style='color:#F28C38; margin-top:0;'>Tableau de la consommation des équipements</h2>
-            <p style='color:#FFFFFF;'>Consommation détaillée par équipement pour la catégorie sélectionnée</p>
+        <div class='analysis-card'>
+            <h2 style='color: #2c3e50; margin-top:0;'>Tableau de la consommation des équipements</h2>
+            <p style='color: #7f8c8d;'>Consommation détaillée par équipement pour la catégorie sélectionnée</p>
         </div>
         """, unsafe_allow_html=True)
         
-        table_df = filtered_data[['Date', 'Desc_CA', 'Desc_Cat', 'Montant']].copy()
-        table_df['Date'] = table_df['Date'].dt.strftime('%d/%m/%Y')
-        table_df['Montant'] = table_df['Montant'].round(2)
-        table_df = table_df.rename(columns={
-            'Date': 'Date',
-            'Desc_CA': 'Équipement',
-            'Desc_Cat': 'Type de consommation',
-            'Montant': 'Montant (DH)'
-        })
-        
-        total_montant = table_df['Montant (DH)'].sum()
-        
-        st.dataframe(
-            table_df.style.format({
-                'Montant (DH)': '{:,.2f} DH',
-                'Date': lambda x: x if x else ''
-            }).set_properties(**{
-                'background-color': '#424242',
-                'border': '1px solid #ddd',
-                'text-align': 'center',
-                'color': '#FFFFFF'
-            }).set_table_styles([
-                {'selector': 'th', 'props': [('background-color', '#424242'), ('color', '#F28C38'), ('font-weight', 'bold')]}
-            ]),
-            height=600,
-            use_container_width=True
+        # Filtre pour le type de consommation
+        st.markdown("<h3 style='color: #2c3e50;'>Filtrer par type de consommation</h3>", unsafe_allow_html=True)
+        consumption_types = ["Tous les types"] + sorted(filtered_data['Desc_Cat'].unique())
+        selected_consumption_types = st.multiselect(
+            "Sélectionner les types de consommation",
+            consumption_types,
+            default=["Tous les types"],
+            key="consumption_type_multiselect"
         )
         
-        st.markdown(f"""
-        <div style='background-color:#424242; padding:10px; border-radius:10px; text-align:right; margin-top:10px;'>
-            <p style='color:#FFFFFF; font-size:16px; font-weight:bold;'>Total : {total_montant:,.2f} DH</p>
-        </div>
-        """, unsafe_allow_html=True)
+        # Préparer les données du tableau
+        table_df = filtered_data[['Date', 'Desc_CA', 'Desc_Cat', 'Montant']].copy()
+        
+        # Appliquer le filtre sur les types de consommation
+        if "Tous les types" not in selected_consumption_types and selected_consumption_types:
+            table_df = table_df[table_df['Desc_Cat'].isin(selected_consumption_types)]
+        
+        if table_df.empty:
+            st.warning("Aucune donnée disponible pour les critères sélectionnés.")
+        else:
+            table_df['Date'] = table_df['Date'].dt.strftime('%d/%m/%Y')
+            table_df['Montant'] = table_df['Montant'].round(2)
+            table_df = table_df.rename(columns={
+                'Date': 'Date',
+                'Desc_CA': 'Équipement',
+                'Desc_Cat': 'Type de consommation',
+                'Montant': 'Montant (DH)'
+            })
+            
+            total_montant = table_df['Montant (DH)'].sum()
+            
+            st.dataframe(
+                table_df.style.format({
+                    'Montant (DH)': '{:,.2f} DH',
+                    'Date': lambda x: x if x else ''
+                }).set_properties(**{
+                    'background-color': 'white',
+                    'border': '1px solid #dfe6e9',
+                    'text-align': 'center',
+                    'color': '#2c3e50'
+                }).set_table_styles([
+                    {'selector': 'th', 'props': [('background-color', 'white'), ('color', '#3498db'), ('font-weight', 'bold')]}
+                ]),
+                height=600,
+                use_container_width=True
+            )
+            
+            st.markdown(f"""
+            <div style='background-color: white; padding:10px; border-radius:10px; text-align:right; margin-top:10px; border: 1px solid #dfe6e9;'>
+                <p style='color: #2c3e50; font-size:16px; font-weight:bold;'>Total : {total_montant:,.2f} DH</p>
+            </div>
+            """, unsafe_allow_html=True)
