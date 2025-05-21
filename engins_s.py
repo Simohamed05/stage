@@ -573,7 +573,6 @@ else:
                 df = load_data(st.session_state.uploaded_files)
 
         if df.empty:
-            st.warning("Aucune donnée disponible. Veuillez téléverser au moins un fichier Excel ou ZIP valide.")
             st.stop()
 
         # Filtres
