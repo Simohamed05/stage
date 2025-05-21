@@ -10,7 +10,9 @@ from io import BytesIO
 import plotly.io as pio
 import json
 import bcrypt
+import io
 import os
+import zipfile
 
 # Configuration de la page
 st.set_page_config(page_title="Tableau de bord de la consommation des équipements miniers", layout="wide")
@@ -174,51 +176,95 @@ def hash_password(password):
 def check_password(password, hashed):
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-@st.cache_data
 def load_data(uploaded_files=None):
     try:
         if not uploaded_files:
-            st.warning("Aucun fichier téléversé. Veuillez importer au moins un fichier Excel.")
+            st.warning("Aucun fichier téléversé. Veuillez importer au moins un fichier Excel ou ZIP.")
             return pd.DataFrame()
+
+        if len(uploaded_files) > 5:
+            st.warning("Vous ne pouvez pas téléverser plus de 5 fichiers à la fois. Seuls les 5 premiers fichiers seront traités.")
+            uploaded_files = uploaded_files[:5]
 
         dfs = []
         required_columns = ['Date', 'CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant']
         max_file_size = 200 * 1024 * 1024  # 200 Mo en octets
 
         for uploaded_file in uploaded_files:
-            # Vérifier la taille du fichier
+            st.write(f"Traitement du fichier : {uploaded_file.name}, Taille : {uploaded_file.size / 1024 / 1024:.2f} Mo, Type : {'ZIP' if uploaded_file.name.endswith('.zip') else 'Excel'}")
             if uploaded_file.size > max_file_size:
                 st.warning(f"Le fichier {uploaded_file.name} dépasse la limite de 200 Mo et sera ignoré.")
                 continue
 
+            # Réinitialiser le pointeur de fichier
             try:
-                df = pd.read_excel(uploaded_file)
-                
-                if not all(col in df.columns for col in required_columns):
-                    st.warning(f"Le fichier {uploaded_file.name} ne contient pas toutes les colonnes requises : {', '.join(required_columns)}. Il sera ignoré.")
-                    continue
-                
-                if pd.api.types.is_numeric_dtype(df['Date']):
-                    df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
-                elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
-                    df['Date'] = pd.to_datetime(df['Date'])
-                
-                df = df.dropna(subset=['CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant'])
-                df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
-                df['Mois'] = df['Date'].dt.month_name()
-                
-                months_fr = {
-                    'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
-                    'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
-                    'July': 'Juillet', 'August': 'Août', 'September': 'Septembre',
-                    'October': 'Octobre', 'November': 'Novembre', 'December': 'Décembre'
-                }
-                df['Mois'] = df['Mois'].map(months_fr)
-                
-                dfs.append(df)
+                uploaded_file.seek(0)
             except Exception as e:
-                st.warning(f"Erreur lors du chargement du fichier {uploaded_file.name} : {str(e)}. Ce fichier sera ignoré.")
+                st.warning(f"Erreur lors de la réinitialisation du pointeur pour {uploaded_file.name} : {str(e)}. Ce fichier sera ignoré.")
                 continue
+
+            if uploaded_file.name.endswith('.zip'):
+                try:
+                    # Convertir UploadedFile en BytesIO
+                    file_bytes = uploaded_file.read()
+                    file_stream = io.BytesIO(file_bytes)
+                    with zipfile.ZipFile(file_stream, 'r') as z:
+                        for filename in z.namelist():
+                            if filename.endswith('.xlsx'):
+                                with z.open(filename) as f:
+                                    try:
+                                        df = pd.read_excel(f)
+                                        if not all(col in df.columns for col in required_columns):
+                                            st.warning(f"Le fichier {filename} dans le ZIP ne contient pas toutes les colonnes requises. Il sera ignoré.")
+                                            continue
+                                        if pd.api.types.is_numeric_dtype(df['Date']):
+                                            df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
+                                        elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
+                                            df['Date'] = pd.to_datetime(df['Date'])
+                                        df = df.dropna(subset=['CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant'])
+                                        df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
+                                        df['Mois'] = df['Date'].dt.month_name()
+                                        months_fr = {
+                                            'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
+                                            'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
+                                            'July': 'Juillet', 'August': 'Août', 'September': 'Septembre',
+                                            'October': 'Octobre', 'November': 'Novembre', 'December': 'Décembre'
+                                        }
+                                        df['Mois'] = df['Mois'].map(months_fr)
+                                        dfs.append(df)
+                                    except Exception as e:
+                                        st.warning(f"Erreur lors du chargement du fichier {filename} dans le ZIP : {str(e)}")
+                                        continue
+                except zipfile.BadZipFile:
+                    st.warning(f"Le fichier {uploaded_file.name} n'est pas un fichier ZIP valide et sera ignoré.")
+                    continue
+                except Exception as e:
+                    st.warning(f"Erreur lors du traitement du fichier ZIP {uploaded_file.name} : {str(e)}")
+                    continue
+            else:
+                try:
+                    df = pd.read_excel(uploaded_file)
+                    if not all(col in df.columns for col in required_columns):
+                        st.warning(f"Le fichier {uploaded_file.name} ne contient pas toutes les colonnes requises : {', '.join(required_columns)}. Il sera ignoré.")
+                        continue
+                    if pd.api.types.is_numeric_dtype(df['Date']):
+                        df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
+                    elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
+                        df['Date'] = pd.to_datetime(df['Date'])
+                    df = df.dropna(subset=['CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant'])
+                    df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
+                    df['Mois'] = df['Date'].dt.month_name()
+                    months_fr = {
+                        'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
+                        'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
+                        'July': 'Juillet', 'August': 'Août', 'September': 'Septembre',
+                        'October': 'Octobre', 'November': 'Novembre', 'December': 'Décembre'
+                    }
+                    df['Mois'] = df['Mois'].map(months_fr)
+                    dfs.append(df)
+                except Exception as e:
+                    st.warning(f"Erreur lors du chargement du fichier {uploaded_file.name} : {str(e)}. Ce fichier sera ignoré.")
+                    continue
 
         if not dfs:
             st.error("Aucun fichier valide n'a pu être chargé. Veuillez vérifier les fichiers téléversés.")
@@ -470,6 +516,11 @@ if not st.session_state.logged_in:
 else:
     # Barre latérale pour les filtres et importation
     # Barre latérale pour les filtres et importation
+    if 'file_uploader_key' not in st.session_state:
+        st.session_state.file_uploader_key = 0
+    if 'uploaded_files' not in st.session_state:
+        st.session_state.uploaded_files = []
+
     with st.sidebar:
         st.markdown(f"""
         <div style='margin-bottom:20px;'>
@@ -480,30 +531,49 @@ else:
             st.session_state.logged_in = False
             st.session_state.username = None
             st.session_state.page = 'login'
+            st.session_state.uploaded_files = []
+            st.session_state.file_uploader_key = 0
             st.rerun()
 
-        # Importation des données
         st.subheader("Importer des données")
+        st.markdown("**Note** : Les nouveaux fichiers importés s'ajoutent aux fichiers précédents. Pour réinitialiser, déconnectez-vous.")
+        st.markdown("**Fichiers importés** :")
+        if st.session_state.uploaded_files:
+            st.write(", ".join([f.name for f in st.session_state.uploaded_files]))
+        else:
+            st.write("Aucun fichier importé.")
+
         with st.form("file_upload_form", clear_on_submit=True):
-            uploaded_files = st.file_uploader("Téléverser des fichiers Excel", type=["xlsx"], accept_multiple_files=True, key="file_uploader")
+            uploaded_files = st.file_uploader(
+                "Téléverser des fichiers Excel ou ZIP",
+                type=["xlsx", "zip"],
+                accept_multiple_files=True,
+                key=f"file_uploader_{st.session_state.file_uploader_key}"
+            )
             submit_button = st.form_submit_button("Charger les fichiers")
             
-            if submit_button and uploaded_files:
-                df = load_data(uploaded_files)
-                if not df.empty:
-                    st.success(f"{len(uploaded_files)} fichier(s) chargé(s) avec succès. Nombre total de lignes : {df.shape[0]}")
+            if submit_button:
+                if uploaded_files:
+                    # Ajouter les nouveaux fichiers à la liste existante
+                    st.session_state.uploaded_files.extend(uploaded_files)
+                    # Incrémenter la clé pour réinitialiser le widget
+                    st.session_state.file_uploader_key += 1
+                    st.write(f"Nombre total de fichiers dans la session : {len(st.session_state.uploaded_files)}")
+                    st.write(f"Fichiers dans la session : {[f.name for f in st.session_state.uploaded_files]}")
+                    df = load_data(st.session_state.uploaded_files)
+                    if not df.empty:
+                        st.success(f"{len(st.session_state.uploaded_files)} fichier(s) chargé(s) avec succès. Nombre total de lignes : {df.shape[0]}")
+                    else:
+                        st.warning("Aucun fichier valide n'a pu être chargé. Veuillez vérifier les fichiers téléversés.")
+                        st.stop()
                 else:
-                    st.warning("Aucun fichier valide n'a pu être chargé. Veuillez vérifier les fichiers téléversés.")
+                    st.warning("Aucun fichier sélectionné. Veuillez téléverser au moins un fichier Excel ou ZIP.")
                     st.stop()
-            elif submit_button and not uploaded_files:
-                st.warning("Aucun fichier sélectionné. Veuillez téléverser au moins un fichier Excel.")
-                st.stop()
             else:
-                df = pd.DataFrame()  # DataFrame vide si aucun fichier n'est soumis
-            # Charger les données
-        df = load_data(uploaded_files)
-        
+                df = load_data(st.session_state.uploaded_files)
+
         if df.empty:
+            st.warning("Aucune donnée disponible. Veuillez téléverser au moins un fichier Excel ou ZIP valide.")
             st.stop()
 
         # Filtres
@@ -528,7 +598,11 @@ else:
         if not available_equipment:
             st.warning("Aucun équipement ne correspond au terme de recherche.")
         selected_equipment = st.selectbox("Sélectionner l'équipement", equipment_options)
-                    
+        df = load_data(uploaded_files)
+        
+        if df.empty:
+            st.stop()
+       
     # Filtrer les données
     filtered_data = df.copy()
     if len(date_range) == 2:
