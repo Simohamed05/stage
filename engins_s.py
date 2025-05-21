@@ -174,46 +174,66 @@ def hash_password(password):
 def check_password(password, hashed):
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-# Chargement des données
 @st.cache_data
-def load_data(uploaded_file=None):
+def load_data(uploaded_files=None):
     try:
-        if uploaded_file is not None:
-            df = pd.read_excel(uploaded_file)
-        else:
-            file_path = resource_path("engins2.xlsx")
-            if not os.path.exists(file_path):
-                st.error("Fichier 'engins2.xlsx' introuvable dans le dossier de l'application.")
-                st.stop()
-            df = pd.read_excel(file_path)
-        
-        required_columns = ['Date', 'CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant']
-        if not all(col in df.columns for col in required_columns):
-            st.error(f"Le fichier doit contenir les colonnes suivantes : {', '.join(required_columns)}")
-            st.stop()
-        
-        if pd.api.types.is_numeric_dtype(df['Date']):
-            df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
-        elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
-            df['Date'] = pd.to_datetime(df['Date'])
-        
-        df = df.dropna(subset=['CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant'])
-        df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
-        df['Mois'] = df['Date'].dt.month_name()
-        
-        months_fr = {
-            'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
-            'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
-            'July': 'Juillet', 'August': 'Août', 'September': 'Septembre',
-            'October': 'Octobre', 'November': 'Novembre', 'December': 'Décembre'
-        }
-        df['Mois'] = df['Mois'].map(months_fr)
-        
-        return df
-    except Exception as e:
-        st.error(f"Erreur lors du chargement du fichier : {str(e)}")
-        st.stop()
+        if not uploaded_files:  # Vérifier si la liste est vide ou None
+            st.warning("Aucun fichier téléversé. Veuillez importer au moins un fichier Excel.")
+            return pd.DataFrame()  # Retourner un DataFrame vide si aucun fichier
 
+        # Liste pour stocker les DataFrames de chaque fichier
+        dfs = []
+        required_columns = ['Date', 'CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant']
+
+        # Traiter chaque fichier téléversé
+        for uploaded_file in uploaded_files:
+            try:
+                df = pd.read_excel(uploaded_file)
+                
+                # Vérifier si les colonnes requises sont présentes
+                if not all(col in df.columns for col in required_columns):
+                    st.warning(f"Le fichier {uploaded_file.name} ne contient pas toutes les colonnes requises : {', '.join(required_columns)}. Il sera ignoré.")
+                    continue
+                
+                # Convertir la colonne 'Date' si nécessaire
+                if pd.api.types.is_numeric_dtype(df['Date']):
+                    df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
+                elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
+                    df['Date'] = pd.to_datetime(df['Date'])
+                
+                # Nettoyer les données
+                df = df.dropna(subset=['CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant'])
+                df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
+                df['Mois'] = df['Date'].dt.month_name()
+                
+                # Traduire les mois en français
+                months_fr = {
+                    'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
+                    'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
+                    'July': 'Juillet', 'August': 'Août', 'September': 'Septembre',
+                    'October': 'Octobre', 'November': 'Novembre', 'December': 'Décembre'
+                }
+                df['Mois'] = df['Mois'].map(months_fr)
+                
+                dfs.append(df)
+            except Exception as e:
+                st.warning(f"Erreur lors du chargement du fichier {uploaded_file.name} : {str(e)}. Ce fichier sera ignoré.")
+                continue
+
+        # Combiner tous les DataFrames valides
+        if not dfs:
+            st.error("Aucun fichier valide n'a pu être chargé. Veuillez vérifier les fichiers téléversés.")
+            return pd.DataFrame()
+        
+        combined_df = pd.concat(dfs, ignore_index=True)
+        
+        # Supprimer les doublons éventuels (basés sur toutes les colonnes)
+        combined_df = combined_df.drop_duplicates()
+        
+        return combined_df
+    except Exception as e:
+        st.error(f"Erreur générale lors du chargement des fichiers : {str(e)}")
+        return pd.DataFrame() # Retourner un DataFrame vide en cas d'erreur
 # Calculs en cache
 def compute_monthly_costs(data):
     monthly_data = data.groupby('Mois')['Montant'].sum().reset_index()
@@ -452,6 +472,7 @@ if not st.session_state.logged_in:
 
 else:
     # Barre latérale pour les filtres et importation
+    # Barre latérale pour les filtres et importation
     with st.sidebar:
         # Bouton de déconnexion
         st.markdown(f"""
@@ -467,10 +488,13 @@ else:
 
         # Importation des données
         st.subheader("Importer des données")
-        uploaded_file = st.file_uploader("Téléverser un fichier Excel", type=["xlsx"], key="file_uploader")
+        uploaded_files = st.file_uploader("Téléverser des fichiers Excel", type=["xlsx"], accept_multiple_files=True, key="file_uploader")
         
         # Charger les données
-        df = load_data(uploaded_file)
+        df = load_data(uploaded_files)
+        
+        if df.empty:
+            st.stop()
 
         # Filtres
         st.subheader("Filtres")
@@ -494,8 +518,7 @@ else:
         if not available_equipment:
             st.warning("Aucun équipement ne correspond au terme de recherche.")
         selected_equipment = st.selectbox("Sélectionner l'équipement", equipment_options)
-        
-        
+                    
     # Filtrer les données
     filtered_data = df.copy()
     if len(date_range) == 2:
