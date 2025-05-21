@@ -147,16 +147,26 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+import os
+import sys
+
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 # Fonctions pour gérer les utilisateurs
 def load_users():
-    if os.path.exists("users.json"):
-        with open("users.json", "r") as f:
+    file_path = resource_path("users.json")
+    if os.path.exists(file_path):
+        with open(file_path, "r") as f:
             return json.load(f)
     return {}
 
 def save_users(users):
-    with open("users.json", "w") as f:
+    file_path = resource_path("users.json")
+    with open(file_path, "w") as f:
         json.dump(users, f)
+
 
 def hash_password(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -171,26 +181,26 @@ def load_data(uploaded_file=None):
         if uploaded_file is not None:
             df = pd.read_excel(uploaded_file)
         else:
-            df = pd.read_excel("engins2.xlsx")
+            file_path = resource_path("engins2.xlsx")
+            if not os.path.exists(file_path):
+                st.error("Fichier 'engins2.xlsx' introuvable dans le dossier de l'application.")
+                st.stop()
+            df = pd.read_excel(file_path)
         
-        # Vérification des colonnes requises
         required_columns = ['Date', 'CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant']
         if not all(col in df.columns for col in required_columns):
             st.error(f"Le fichier doit contenir les colonnes suivantes : {', '.join(required_columns)}")
             st.stop()
         
-        # Conversion de la colonne Date
         if pd.api.types.is_numeric_dtype(df['Date']):
             df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
         elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
             df['Date'] = pd.to_datetime(df['Date'])
         
-        # Nettoyage des données
         df = df.dropna(subset=['CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant'])
         df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
         df['Mois'] = df['Date'].dt.month_name()
         
-        # Traduction des mois en français
         months_fr = {
             'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
             'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
@@ -205,7 +215,6 @@ def load_data(uploaded_file=None):
         st.stop()
 
 # Calculs en cache
-@st.cache_data
 def compute_monthly_costs(data):
     monthly_data = data.groupby('Mois')['Montant'].sum().reset_index()
     month_order = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
@@ -213,12 +222,10 @@ def compute_monthly_costs(data):
     monthly_data['Mois'] = pd.Categorical(monthly_data['Mois'], categories=month_order, ordered=True)
     return monthly_data.sort_values('Mois')
 
-@st.cache_data
 def compute_category_breakdown(data):
     return data.groupby('Desc_Cat')['Montant'].sum().reset_index()
 
 # Fonction pour générer le rapport Word
-@st.cache_data
 def generate_word_report(filtered_data, total_cost, global_avg, category_stats, most_consumed_per_cat, 
                         pivot_engine, selected_engines, table_df, total_montant, figures):
     doc = Document()
@@ -573,7 +580,7 @@ else:
                         filtered_data[filtered_data['CATEGORIE'].isin(selected_engines)],
                         values='Montant',
                         index='Desc_CA',
-                        columns='Desc.walkthrough',
+                        columns='Desc_Cat',
                         aggfunc='sum',
                         fill_value=0,
                         margins=True,
