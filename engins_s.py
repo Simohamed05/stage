@@ -14,8 +14,9 @@ import io
 import os
 import zipfile
 import sys
+import locale
 
-# Configuration de la page
+# Configuration de la page (unchanged)
 st.set_page_config(page_title="Tableau de bord de la consommation des équipements miniers", layout="wide")
 st.markdown("""
     <style>
@@ -155,7 +156,7 @@ def resource_path(relative_path):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
 
-# Fonctions pour gérer les utilisateurs
+# Fonctions pour gérer les utilisateurs (unchanged)
 def load_users():
     file_path = resource_path("users.json")
     if os.path.exists(file_path):
@@ -174,6 +175,7 @@ def hash_password(password):
 def check_password(password, hashed):
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
+# In load_data function
 def load_data(uploaded_files=None):
     try:
         if uploaded_files is None or not uploaded_files:
@@ -184,14 +186,11 @@ def load_data(uploaded_files=None):
         required_columns = ['Date', 'CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant']
         max_file_size = 200 * 1024 * 1024  # 200 Mo en octets
 
-        # Traiter chaque fichier téléversé
         for uploaded_file in uploaded_files:
             st.write(f"Traitement du fichier : {uploaded_file.name}, Taille : {uploaded_file.size / 1024 / 1024:.2f} Mo, Type : {'ZIP' if uploaded_file.name.endswith('.zip') else 'Excel'}")
-
             if uploaded_file.size > max_file_size:
                 st.warning(f"Le fichier {uploaded_file.name} dépasse la limite de 200 Mo et sera ignoré.")
                 continue
-
             try:
                 uploaded_file.seek(0)
             except Exception as e:
@@ -214,12 +213,27 @@ def load_data(uploaded_files=None):
                                         if not all(col in df.columns for col in required_columns):
                                             st.warning(f"Le fichier {filename} dans le ZIP {uploaded_file.name} ne contient pas toutes les colonnes requises : {', '.join(required_columns)}. Il sera ignoré.")
                                             continue
+                                        # Convert CATEGORIE to string and handle NaN
+                                        df['CATEGORIE'] = df['CATEGORIE'].astype(str).replace('nan', 'Unknown')
+                                        # Debug: Check CATEGORIE types
+                                        st.write(f"Types dans CATEGORIE pour {filename} : {df['CATEGORIE'].apply(type).unique()}")
+                                        # Rest of the processing
+                                        st.write(f"Total brut Montant pour {filename} (avant nettoyage) : {df['Montant'].sum():,.2f} DH")
+                                        st.write(f"Nombre de lignes initial : {df.shape[0]}")
+                                        st.write(f"Lignes avec valeurs manquantes dans {filename} : {df[required_columns].isna().any(axis=1).sum()}")
                                         if pd.api.types.is_numeric_dtype(df['Date']):
                                             df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
                                         elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
-                                            df['Date'] = pd.to_datetime(df['Date'])
-                                        df = df.dropna(subset=['CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant'])
+                                            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                                        df['Montant'] = df['Montant'].astype(str).str.replace(r'[^\d.,]', '', regex=True)
+                                        df['Montant'] = df['Montant'].str.replace(',', '.', regex=False)
                                         df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
+                                        initial_rows = df.shape[0]
+                                        df = df.dropna(subset=['Montant'])
+                                        dropped_rows = initial_rows - df.shape[0]
+                                        st.write(f"Lignes supprimées pour Montant NaN dans {filename} : {dropped_rows}")
+                                        st.write(f"Total Montant pour {filename} (après conversion) : {df['Montant'].sum():,.2f} DH")
+                                        st.write(f"Nombre de lignes après conversion : {df.shape[0]}")
                                         df['Mois'] = df['Date'].dt.month_name()
                                         months_fr = {
                                             'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
@@ -244,12 +258,27 @@ def load_data(uploaded_files=None):
                     if not all(col in df.columns for col in required_columns):
                         st.warning(f"Le fichier {uploaded_file.name} ne contient pas toutes les colonnes requises : {', '.join(required_columns)}. Il sera ignoré.")
                         continue
+                    # Convert CATEGORIE to string and handle NaN
+                    df['CATEGORIE'] = df['CATEGORIE'].astype(str).replace('nan', 'Unknown')
+                    # Debug: Check CATEGORIE types
+                    st.write(f"Types dans CATEGORIE pour {uploaded_file.name} : {df['CATEGORIE'].apply(type).unique()}")
+                    # Rest of the processing
+                    st.write(f"Total brut Montant pour {uploaded_file.name} (avant nettoyage) : {df['Montant'].sum():,.2f} DH")
+                    st.write(f"Nombre de lignes initial : {df.shape[0]}")
+                    st.write(f"Lignes avec valeurs manquantes dans {uploaded_file.name} : {df[required_columns].isna().any(axis=1).sum()}")
                     if pd.api.types.is_numeric_dtype(df['Date']):
                         df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
                     elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
-                        df['Date'] = pd.to_datetime(df['Date'])
-                    df = df.dropna(subset=['CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant'])
+                        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                    df['Montant'] = df['Montant'].astype(str).str.replace(r'[^\d.,]', '', regex=True)
+                    df['Montant'] = df['Montant'].str.replace(',', '.', regex=False)
                     df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
+                    initial_rows = df.shape[0]
+                    df = df.dropna(subset=['Montant'])
+                    dropped_rows = initial_rows - df.shape[0]
+                    st.write(f"Lignes supprimées pour Montant NaN dans {uploaded_file.name} : {dropped_rows}")
+                    st.write(f"Total Montant pour {uploaded_file.name} (après conversion) : {df['Montant'].sum():,.2f} DH")
+                    st.write(f"Nombre de lignes après conversion : {df.shape[0]}")
                     df['Mois'] = df['Date'].dt.month_name()
                     months_fr = {
                         'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
@@ -268,14 +297,27 @@ def load_data(uploaded_files=None):
             return pd.DataFrame()
         
         combined_df = pd.concat(dfs, ignore_index=True)
-        combined_df = combined_df.drop_duplicates()
+        # Ensure CATEGORIE is string and filter for DUMPER, FORATION, 10 TONNES
+        combined_df['CATEGORIE'] = combined_df['CATEGORIE'].astype(str).replace('nan', 'Unknown')
+        combined_df = combined_df[combined_df['CATEGORIE'].str.upper().isin(['DUMPER', 'FORATION', '10 TONNES'])]
+        # Debug: After filtering
+        st.write(f"Total Montant après filtrage par catégories (DUMPER, FORATION, 10 TONNES) : {combined_df['Montant'].sum():,.2f} DH")
+        st.write(f"Nombre total de lignes après filtrage : {combined_df.shape[0]}")
+        st.write(f"Types dans CATEGORIE après filtrage : {combined_df['CATEGORIE'].apply(type).unique()}")
+        st.write(f"Catégories présentes : {combined_df['CATEGORIE'].unique()}")
         
-        st.success(f"{len(dfs)} fichier(s) valide(s) chargé(s) avec succès. Nombre total de lignes : {combined_df.shape[0]}")
+        if combined_df.empty:
+            st.error("Aucune donnée pour les catégories DUMPER, FORATION, ou 10 TONNES. Vérifiez les fichiers téléversés.")
+            return pd.DataFrame()
+        
+        st.success(f"{len(dfs)} fichier(s) valide(s) chargé(s). Nombre total de lignes après filtrage : {combined_df.shape[0]}")
         return combined_df
     except Exception as e:
         st.error(f"Erreur générale lors du chargement des fichiers : {str(e)}")
         return pd.DataFrame()
 
+
+# Rest of the original code (unchanged)
 def load_tonnage_data(uploaded_files=None):
     try:
         if uploaded_files is None or not uploaded_files:
@@ -286,13 +328,11 @@ def load_tonnage_data(uploaded_files=None):
         required_columns = ['DATE', 'DS Sud', 'DS Nord', 'KA']
         max_file_size = 200 * 1024 * 1024  # 200 Mo en octets
 
-        # Vérifier le type de uploaded_files
         if not isinstance(uploaded_files, (list, tuple)):
             st.error(f"Erreur : uploaded_files doit être une liste ou un tuple, reçu : {type(uploaded_files)}")
             return pd.DataFrame()
 
         for uploaded_file in uploaded_files:
-            # Vérifier que l'élément est un objet fichier valide
             if not hasattr(uploaded_file, 'name') or not hasattr(uploaded_file, 'read'):
                 st.warning(f"Élément invalide dans uploaded_files : {type(uploaded_file)}. Cet élément sera ignoré.")
                 continue
@@ -392,18 +432,15 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
                         pivot_engine, selected_engines, table_df, total_montant, figures, tonnage_df, tonnage_date_range):
     doc = Document()
     
-    # Titre et métadonnées
     title = doc.add_heading('Rapport Complet de Consommation des Équipements Miniers', 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph(f"Date de génération: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     doc.add_paragraph(f"Période couverte: du {filtered_data['Date'].min().strftime('%d/%m/%Y')} au {filtered_data['Date'].max().strftime('%d/%m/%Y')}")
     doc.add_paragraph(f"Nombre d'équipements analysés: {filtered_data['Desc_CA'].nunique()}")
     
-    # Table des matières
     doc.add_heading('Table des Matières', level=1)
     doc.add_paragraph('1. Indicateurs Clés\n2. Analyse par Catégorie\n3. Analyse Comparative\n4. Données Détailées\n5. Recommandations\n6. Analyse des Tonnages', style='ListBullet')
     
-    # Section 1: Indicateurs clés
     doc.add_heading('1. Indicateurs Clés', level=1)
     table = doc.add_table(rows=3, cols=2)
     table.style = 'LightShading'
@@ -414,7 +451,6 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
     table.cell(2, 0).text = 'Moyenne globale par jour'
     table.cell(2, 1).text = f"{global_avg:,.0f} DH"
     
-    # Indicateurs par catégorie
     doc.add_heading('Indicateurs par Catégorie', level=2)
     cat_table = doc.add_table(rows=category_stats.shape[0]+1, cols=4)
     cat_table.style = 'LightShading'
@@ -432,7 +468,6 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
         cat_table.cell(i+1, 2).text = f"{row['Moyenne']:,.0f}"
         cat_table.cell(i+1, 3).text = most_consumed_desc
     
-    # Section 2: Graphiques et analyses
     doc.add_heading('2. Analyse par Catégorie', level=1)
     doc.add_paragraph('Cette section présente les analyses détaillées pour chaque catégorie d\'équipement.')
     
@@ -450,7 +485,6 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
             doc.add_picture(BytesIO(img_bytes), width=Inches(6))
             progress_bar.progress((i + 1) / total_figures)
     
-    # Section 3: Analyse comparative
     doc.add_heading('3. Analyse Comparative', level=1)
     doc.add_paragraph('Comparaison des performances entre les différentes catégories d\'équipements.')
     
@@ -463,10 +497,8 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
         doc.add_picture(BytesIO(img_bytes), width=Inches(6))
         progress_bar.progress(1.0)
     
-    # Section 4: Données détaillées
     doc.add_heading('4. Données Détailées', level=1)
     
-    # Tableau pivot
     if not pivot_engine.empty:
         doc.add_heading(f'Détail des consommations pour {", ".join(selected_engines) if selected_engines else "toutes les catégories"}', level=2)
         doc.add_paragraph(f"Tableau détaillant les différents types de consommation pour chaque équipement des catégories sélectionnées.")
@@ -485,7 +517,6 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
             for j, value in enumerate(row):
                 row_cells[j+1].text = f"{value:,.2f} DH"
     
-    # Tableau complet des équipements
     doc.add_heading('Journal complet des consommations', level=2)
     doc.add_paragraph('Liste détaillée des consommations enregistrées (limité aux 100 premières entrées).')
     
@@ -505,7 +536,6 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
     table_rows[max_rows+1].cells[0].text = 'Total'
     table_rows[max_rows+1].cells[table_df.shape[1]-1].text = f"{total_montant:,.2f} DH"
     
-    # Section 5: Recommandations
     doc.add_heading('5. Recommandations', level=1)
     
     top_categories = filtered_data.groupby('CATEGORIE')['Montant'].sum().nlargest(3).reset_index()
@@ -528,7 +558,6 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
     for rec in recommendations:
         doc.add_paragraph(rec, style='ListBullet')
     
-    # Section 6: Analyse des tonnages
     doc.add_heading('6. Analyse des Tonnages', level=1)
     doc.add_paragraph('Cette section présente les données de tonnage pour les sites DS Sud, DS Nord et KA.')
     
@@ -579,7 +608,6 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
     else:
         doc.add_paragraph("Aucune donnée de tonnage disponible pour la période sélectionnée.")
     
-    # Conclusion
     doc.add_heading('Conclusion', level=1)
     doc.add_paragraph(
         "Ce rapport fournit une analyse complète des coûts de consommation des équipements miniers et des tonnages des sites. "
@@ -587,7 +615,6 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
         "et de prendre des décisions éclairées pour optimiser les coûts d'exploitation et la productivité."
     )
     
-    # Pied de page
     section = doc.sections[0]
     footer = section.footer
     footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
@@ -676,7 +703,6 @@ if not st.session_state.logged_in:
 
 else:
     # Barre latérale pour les filtres et importation
-    # Dans la barre latérale
     with st.sidebar:
         st.subheader("Importer des fichiers de consommation")
         st.markdown("**Note** : Plusieurs fichiers Excel (.xlsx) ou ZIP (.zip) peuvent être importés (max 200 Mo par fichier).")
@@ -690,14 +716,14 @@ else:
             uploaded_files = st.file_uploader(
                 "Téléverser des fichiers Excel ou ZIP (max 200 Mo par fichier)",
                 type=["xlsx", "zip"],
-                accept_multiple_files=True,  # Activer l'importation de plusieurs fichiers
+                accept_multiple_files=True,
                 key=f"file_uploader_{st.session_state.file_uploader_key}"
             )
             submit_button = st.form_submit_button("Charger les fichiers")
 
             if submit_button:
                 if uploaded_files:
-                    st.session_state.uploaded_file = uploaded_files  # Stocker la liste des fichiers
+                    st.session_state.uploaded_file = uploaded_files
                     st.session_state.file_uploader_key += 1
                     df = load_data(st.session_state.uploaded_file)
                     if not df.empty:
@@ -714,7 +740,6 @@ else:
             st.warning("Aucune donnée disponible. Veuillez téléverser un fichier Excel ou ZIP valide.")
             st.stop()
         
-        # Filtres
         st.subheader("Filtres")
         st.subheader("Plage de dates")
         default_start = df['Date'].min().date() if not df.empty else datetime.today().date()
@@ -737,13 +762,19 @@ else:
             st.warning("Aucun équipement ne correspond au terme de recherche.")
         selected_equipment = st.selectbox("Sélectionner l'équipement", equipment_options)
         filtered_data = df.copy()
+        # Debug: Total après chargement initial
+        st.write(f"Total Montant des données brutes : {filtered_data['Montant'].sum():,.2f} DH")
         if len(date_range) == 2:
             start_date, end_date = date_range
             filtered_data = filtered_data[(filtered_data['Date'].dt.date >= start_date) & 
                                         (filtered_data['Date'].dt.date <= end_date)]
+            # Debug: Total après filtre de date
+            st.write(f"Total Montant après filtre de date : {filtered_data['Montant'].sum():,.2f} DH")
 
         if selected_equipment != "Tous les équipements":
             filtered_data = filtered_data[filtered_data['Desc_CA'] == selected_equipment]
+            # Debug: Total après filtre d'équipement
+            st.write(f"Total Montant après filtre d'équipement : {filtered_data['Montant'].sum():,.2f} DH")
 
         if filtered_data.empty:
             st.warning("Aucune donnée disponible après filtrage. Veuillez ajuster les filtres.")
@@ -757,14 +788,11 @@ else:
         most_consumed_per_cat = filtered_data.groupby(['CATEGORIE', 'Desc_Cat'])['Montant'].sum().reset_index()
         most_consumed_per_cat = most_consumed_per_cat.loc[most_consumed_per_cat.groupby('CATEGORIE')['Montant'].idxmax()]
         
-        # Exportation
         st.subheader("Exportation")
         if st.button("📄 Générer un rapport Word complet"):
             with st.spinner("Génération du rapport en cours..."):
-                # Préparer les figures
                 figures = {}
                 
-                # Figure: Comparaison des catégories
                 fig_comp = px.bar(
                     filtered_data.groupby('CATEGORIE')['Montant'].sum().reset_index(),
                     x='CATEGORIE',
@@ -784,7 +812,6 @@ else:
                 )
                 figures["Coût total par catégorie"] = fig_comp
                 
-                # Figures par catégorie
                 for cat in filtered_data['CATEGORIE'].unique():
                     cat_data = filtered_data[filtered_data['CATEGORIE'] == cat]
                     equip_sum = cat_data.groupby('Desc_CA')['Montant'].sum().reset_index().sort_values('Montant', ascending=False)
@@ -808,7 +835,6 @@ else:
                     )
                     figures[f"Consommation par équipement ({cat})"] = fig_cat
                 
-                # Figures pour les tonnages
                 tonnage_df = load_tonnage_data(st.session_state.uploaded_tonnage_file)
                 if not tonnage_df.empty:
                     filtered_tonnage_df = tonnage_df.copy()
@@ -845,7 +871,7 @@ else:
                         total_tonnage_df = pd.DataFrame({
                             'Site': ['DS Sud', 'DS Nord', 'KA'],
                             'Tonnage Total': [
-                                filtered_tonnage_df['48'].sum(),
+                                filtered_tonnage_df['DS Sud'].sum(),
                                 filtered_tonnage_df['DS Nord'].sum(),
                                 filtered_tonnage_df['KA'].sum()
                             ]
@@ -869,7 +895,6 @@ else:
                         )
                         figures['Tonnage total par site'] = fig_total_tonnage
                 
-                # Préparer la table pivot pour le rapport
                 pivot_engine = pd.DataFrame()
                 selected_engines = st.session_state.get('selected_engines', [])
                 if not filtered_data.empty and selected_engines and selected_engines != ["Tous les types"]:
@@ -895,7 +920,6 @@ else:
                         margins_name='Total'
                     ).round(2)
                 
-                # Préparer le tableau des équipements
                 table_df = filtered_data[['Date', 'Desc_CA', 'Desc_Cat', 'Montant']].copy()
                 table_df['Date'] = table_df['Date'].dt.strftime('%d/%m/%Y')
                 table_df['Montant'] = table_df['Montant'].round(2)
@@ -907,7 +931,6 @@ else:
                 })
                 total_montant = table_df['Montant (DH)'].sum()
                 
-                # Générer le rapport
                 report = generate_word_report(
                     filtered_data,
                     total_cost,
@@ -935,7 +958,6 @@ else:
                 key="download_button"
             )
 
-    # Contenu principal
     st.markdown("""
     <div class='header-container'>
         <h1 style='color: white; text-align:center; margin-top:0;'>📊 Tableau De Bord De La Consommation Des Engins</h1>
@@ -943,12 +965,6 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-    # Filtrer les données
-    
-
-    # Calculs pour les KPIs
-    
-    # Section des indicateurs clés
     kpi_container = st.container()
     with kpi_container:
         st.markdown(f"""
@@ -989,7 +1005,6 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-        # Pivot table
         st.markdown("<div class='analysis-card'><h3 style='color: #2c3e50;'>Consommation des catégories par type de consommation</h3></div>", unsafe_allow_html=True)
         hist_data = filtered_data.groupby(['CATEGORIE', 'Desc_Cat'])['Montant'].sum().reset_index()
         fig_hist = px.bar(
@@ -1021,7 +1036,6 @@ else:
         )
         st.plotly_chart(fig_hist, use_container_width=True, key="category_consumption")
         
-        # Pivot table for CATEGORIE vs Desc_Cat
         st.markdown("<div class='analysis-card'><h3 style='color: #2c3e50;'>Consommation totale par type d'engin et catégorie de consommation</h3></div>", unsafe_allow_html=True)
         pivot_table = pd.pivot_table(
             filtered_data,
@@ -1045,12 +1059,11 @@ else:
             use_container_width=True
         )
 
-        # Pivot table for selected CATEGORIE
         st.markdown("<div class='analysis-card'><h3 style='color: #2c3e50;'>Consommation par équipement pour les types d'engin sélectionnés</h3></div>", unsafe_allow_html=True)
         engine_data = filtered_data.copy()
         if not engine_data.empty:
             st.markdown("<h4 style='color: #2c3e50;'>Filtrer par type d'engin</h4>", unsafe_allow_html=True)
-            engine_types = ["Tous les types"] + sorted(engine_data['CATEGORIE'].unique())
+            engine_types = ["Tous les types", "DUMPER", "FORATION", "10 TONNES"]
             selected_engines = st.multiselect(
                 "Sélectionner les types d'engin",
                 engine_types,
@@ -1058,10 +1071,22 @@ else:
                 key="engine_type_multiselect"
             )
             st.session_state['selected_engines'] = selected_engines
-            
+
+            # Validate selected_engines types
+            selected_engines = [str(engine) for engine in selected_engines]
+            st.write(f"Selected engines: {selected_engines}")
+            st.write(f"Unique CATEGORIE values: {engine_data['CATEGORIE'].unique()}")
+            st.write(f"CATEGORIE types: {engine_data['CATEGORIE'].apply(type).unique()}")
+
             if "Tous les types" not in selected_engines and selected_engines:
-                engine_data = engine_data[engine_data['CATEGORIE'].isin(selected_engines)]
-            
+                try:
+                    engine_data = engine_data[engine_data['CATEGORIE'].isin(selected_engines)]
+                    st.write(f"Total Montant après filtre par selected_engines : {engine_data['Montant'].sum():,.2f} DH")
+                except TypeError as e:
+                    st.error(f"Erreur lors du filtrage par catégorie : {str(e)}")
+                    st.write(f"Valeurs problématiques dans CATEGORIE : {engine_data['CATEGORIE'].unique()}")
+                    st.stop()
+
             if engine_data.empty:
                 st.warning("Aucune donnée disponible pour les types d'engin sélectionnés.")
             else:
@@ -1089,13 +1114,11 @@ else:
         else:
             st.warning("Aucune donnée disponible pour les critères sélectionnés.")
 
-    # Onglets
     tabs = st.tabs(
         [f"📋 {cat}" for cat in sorted(filtered_data['CATEGORIE'].unique())] + 
         ["📊 Analyse comparative", "💡 Recommandations", "📋 Tableau des équipements", "📈 Tonnage des Sites"]
     )
 
-    # Category tabs
     for i, cat in enumerate(sorted(filtered_data['CATEGORIE'].unique())):
         with tabs[i]:
             cat_data = filtered_data[filtered_data['CATEGORIE'] == cat]
@@ -1127,7 +1150,6 @@ else:
             )
             st.plotly_chart(fig2, use_container_width=True, key=f"equip_sum_{cat}")
 
-    # Analyse comparative
     with tabs[-4]:
         st.markdown("""
         <div class='analysis-card'>
@@ -1155,7 +1177,6 @@ else:
         )
         st.plotly_chart(fig_comp, use_container_width=True, key="category_comparison")
 
-    # Recommandations
     with tabs[-3]:
         st.markdown("""
         <div class='analysis-card'>
@@ -1190,7 +1211,6 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-    # Tableau des équipements
     with tabs[-2]:
         st.markdown("""
         <div class='analysis-card'>
@@ -1212,6 +1232,8 @@ else:
         
         if "Tous les types" not in selected_consumption_types and selected_consumption_types:
             table_df = table_df[table_df['Desc_Cat'].isin(selected_consumption_types)]
+            # Debug: Total après filtre de type de consommation
+            st.write(f"Total Montant après filtre de type de consommation : {table_df['Montant'].sum():,.2f} DH")
         
         if table_df.empty:
             st.warning("Aucune donnée disponible pour les critères sélectionnés.")
@@ -1226,6 +1248,19 @@ else:
             })
             
             total_montant = table_df['Montant (DH)'].sum()
+            # Debug: Comparer les totaux
+            st.write(f"Total Montant dans le Tableau des équipements : {total_montant:,.2f} DH")
+            st.write(f"Total Montant dans les données brutes (avant filtres) : {df['Montant'].sum():,.2f} DH")
+            
+            # Ajout du bouton pour télécharger table_df en CSV
+            csv = table_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Télécharger les données du tableau (CSV)",
+                data=csv,
+                file_name=f"tableau_equipements_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
+                key="download_table_csv"
+            )
             
             st.dataframe(
                 table_df.style.format({
@@ -1244,13 +1279,11 @@ else:
             )
             
             st.markdown(f"""
-            <div style='background-color: white; padding:10px; border-radius:10px; text-align:right; margin-top:10px; border: 1px solid #dfe6e9;'>
-                <p style='color: #2c3e50; font-size:16px; font-weight:bold;'>Total : {total_montant:,.2f} DH</p>
+            <div style='background-color: white; padding:10px; border-radius:10px; margin-top:10px; border: 1px solid #dfe6e9;'>
+                <p style='color: #2c3e50; font-size:16px; font-weight:bold; text-align:right;'>Total : {total_montant:,.2f} DH</p>
             </div>
             """, unsafe_allow_html=True)
 
-    # Onglet Tonnage des Sites
-    # Dans l'onglet Tonnage des Sites
     with tabs[-1]:
         st.markdown("""
         <div class='analysis-card'>
@@ -1259,7 +1292,6 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # Importation des données de tonnage
         st.markdown("<h3 style='color: #2c3e50;'>Importer des fichiers de tonnage</h3>", unsafe_allow_html=True)
         st.markdown("**Note** : Plusieurs fichiers Excel (.xlsx) ou ZIP (.zip) peuvent être importés (max 200 Mo par fichier).")
         st.markdown("**Fichiers importés** :")
@@ -1272,7 +1304,6 @@ else:
         else:
             st.write("Aucun fichier de tonnage importé.")
 
-        # Initialiser tonnage_df comme un DataFrame vide par défaut
         tonnage_df = pd.DataFrame()
 
         with st.form("tonnage_file_upload_form", clear_on_submit=True):
@@ -1303,7 +1334,6 @@ else:
         if tonnage_df.empty:
             st.warning("Aucune donnée de tonnage disponible. Veuillez téléverser un fichier Excel ou ZIP valide.")
         else:
-            # Filtrer par plage de dates
             st.markdown("<h3 style='color: #2c3e50;'>Filtrer par plage de dates</h3>", unsafe_allow_html=True)
             default_tonnage_start = tonnage_df['DATE'].min().date() if not tonnage_df.empty else datetime.today().date()
             default_tonnage_end = tonnage_df['DATE'].max().date() if not tonnage_df.empty else datetime.today().date()
@@ -1327,7 +1357,6 @@ else:
             if filtered_tonnage_df.empty:
                 st.warning("Aucune donnée de tonnage disponible après filtrage. Veuillez ajuster les filtres.")
             else:
-                # Afficher le tableau des tonnages
                 st.markdown("<h3 style='color: #2c3e50;'>Tableau des tonnages</h3>", unsafe_allow_html=True)
                 display_tonnage_df = filtered_tonnage_df[['DATE', 'DS Sud', 'DS Nord', 'KA', 'CUMMULE']].copy()
                 display_tonnage_df['DATE'] = display_tonnage_df['DATE'].dt.strftime('%d/%m/%Y')
@@ -1372,7 +1401,6 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Visualisation comparative
                 st.markdown("<h3 style='color: #2c3e50;'>Comparaison des tonnages par site</h3>", unsafe_allow_html=True)
                 tonnage_melted = filtered_tonnage_df.melt(
                     id_vars=['DATE'],
@@ -1398,7 +1426,6 @@ else:
                 )
                 st.plotly_chart(fig_tonnage, use_container_width=True, key="tonnage_comparison")
 
-                # Graphique en barres pour les totaux
                 total_tonnage_df = pd.DataFrame({
                     'Site': ['DS Sud', 'DS Nord', 'KA'],
                     'Tonnage Total': [
