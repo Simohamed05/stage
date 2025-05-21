@@ -188,14 +188,11 @@ def load_data(uploaded_files=None):
 
         dfs = []
         required_columns = ['Date', 'CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant']
-        max_file_size = 200 * 1024 * 1024  # 200 Mo en octets
+        max_file_size = 200 * 1024 * 1024  # 200 Mo en octets (redondant, déjà vérifié dans la barre latérale)
 
         for uploaded_file in uploaded_files:
             st.write(f"Traitement du fichier : {uploaded_file.name}, Taille : {uploaded_file.size / 1024 / 1024:.2f} Mo, Type : {'ZIP' if uploaded_file.name.endswith('.zip') else 'Excel'}")
-            if uploaded_file.size > max_file_size:
-                st.warning(f"Le fichier {uploaded_file.name} dépasse la limite de 200 Mo et sera ignoré.")
-                continue
-
+            
             # Réinitialiser le pointeur de fichier
             try:
                 uploaded_file.seek(0)
@@ -207,6 +204,9 @@ def load_data(uploaded_files=None):
                 try:
                     # Convertir UploadedFile en BytesIO
                     file_bytes = uploaded_file.read()
+                    if not file_bytes:
+                        st.warning(f"Le fichier ZIP {uploaded_file.name} est vide et sera ignoré.")
+                        continue
                     file_stream = io.BytesIO(file_bytes)
                     with zipfile.ZipFile(file_stream, 'r') as z:
                         for filename in z.namelist():
@@ -545,7 +545,7 @@ else:
 
         with st.form("file_upload_form", clear_on_submit=True):
             uploaded_files = st.file_uploader(
-                "Téléverser des fichiers Excel ou ZIP",
+                "Téléverser des fichiers Excel ou ZIP (max 200 Mo par fichier)",
                 type=["xlsx", "zip"],
                 accept_multiple_files=True,
                 key=f"file_uploader_{st.session_state.file_uploader_key}"
@@ -554,9 +554,21 @@ else:
             
             if submit_button:
                 if uploaded_files:
-                    # Ajouter les nouveaux fichiers à la liste existante
-                    st.session_state.uploaded_files.extend(uploaded_files)
-                    # Incrémenter la clé pour réinitialiser le widget
+                    max_file_size = 200 * 1024 * 1024  # 200 Mo en octets
+                    valid_files = []
+                    for file in uploaded_files:
+                        if file.size > max_file_size:
+                            st.warning(f"Le fichier {file.name} dépasse la limite de 200 Mo et sera ignoré.")
+                        elif not file.name.lower().endswith(('.xlsx', '.zip')):
+                            st.warning(f"Le fichier {file.name} n'est pas un fichier Excel (.xlsx) ou ZIP (.zip) valide et sera ignoré.")
+                        else:
+                            valid_files.append(file)
+                    
+                    if not valid_files:
+                        st.warning("Aucun fichier valide sélectionné. Veuillez téléverser des fichiers Excel ou ZIP de moins de 200 Mo.")
+                        st.stop()
+
+                    st.session_state.uploaded_files.extend(valid_files)
                     st.session_state.file_uploader_key += 1
                     st.write(f"Nombre total de fichiers dans la session : {len(st.session_state.uploaded_files)}")
                     st.write(f"Fichiers dans la session : {[f.name for f in st.session_state.uploaded_files]}")
@@ -573,6 +585,7 @@ else:
                 df = load_data(st.session_state.uploaded_files)
 
         if df.empty:
+            st.warning("Aucune donnée disponible. Veuillez téléverser au moins un fichier Excel ou ZIP valide.")
             st.stop()
 
         # Filtres
@@ -597,10 +610,6 @@ else:
         if not available_equipment:
             st.warning("Aucun équipement ne correspond au terme de recherche.")
         selected_equipment = st.selectbox("Sélectionner l'équipement", equipment_options)
-        df = load_data(uploaded_files)
-        
-        if df.empty:
-            st.stop()
        
     # Filtrer les données
     filtered_data = df.copy()
