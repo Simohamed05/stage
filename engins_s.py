@@ -177,36 +177,36 @@ def check_password(password, hashed):
 @st.cache_data
 def load_data(uploaded_files=None):
     try:
-        if not uploaded_files:  # Vérifier si la liste est vide ou None
+        if not uploaded_files:
             st.warning("Aucun fichier téléversé. Veuillez importer au moins un fichier Excel.")
-            return pd.DataFrame()  # Retourner un DataFrame vide si aucun fichier
+            return pd.DataFrame()
 
-        # Liste pour stocker les DataFrames de chaque fichier
         dfs = []
         required_columns = ['Date', 'CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant']
+        max_file_size = 200 * 1024 * 1024  # 200 Mo en octets
 
-        # Traiter chaque fichier téléversé
         for uploaded_file in uploaded_files:
+            # Vérifier la taille du fichier
+            if uploaded_file.size > max_file_size:
+                st.warning(f"Le fichier {uploaded_file.name} dépasse la limite de 200 Mo et sera ignoré.")
+                continue
+
             try:
                 df = pd.read_excel(uploaded_file)
                 
-                # Vérifier si les colonnes requises sont présentes
                 if not all(col in df.columns for col in required_columns):
                     st.warning(f"Le fichier {uploaded_file.name} ne contient pas toutes les colonnes requises : {', '.join(required_columns)}. Il sera ignoré.")
                     continue
                 
-                # Convertir la colonne 'Date' si nécessaire
                 if pd.api.types.is_numeric_dtype(df['Date']):
                     df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
                 elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
                     df['Date'] = pd.to_datetime(df['Date'])
                 
-                # Nettoyer les données
                 df = df.dropna(subset=['CATEGORIE', 'Desc_Cat', 'Desc_CA', 'Montant'])
                 df['Montant'] = pd.to_numeric(df['Montant'], errors='coerce')
                 df['Mois'] = df['Date'].dt.month_name()
                 
-                # Traduire les mois en français
                 months_fr = {
                     'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
                     'April': 'Avril', 'May': 'Mai', 'June': 'Juin',
@@ -220,14 +220,11 @@ def load_data(uploaded_files=None):
                 st.warning(f"Erreur lors du chargement du fichier {uploaded_file.name} : {str(e)}. Ce fichier sera ignoré.")
                 continue
 
-        # Combiner tous les DataFrames valides
         if not dfs:
             st.error("Aucun fichier valide n'a pu être chargé. Veuillez vérifier les fichiers téléversés.")
             return pd.DataFrame()
         
         combined_df = pd.concat(dfs, ignore_index=True)
-        
-        # Supprimer les doublons éventuels (basés sur toutes les colonnes)
         combined_df = combined_df.drop_duplicates()
         
         return combined_df
@@ -474,7 +471,6 @@ else:
     # Barre latérale pour les filtres et importation
     # Barre latérale pour les filtres et importation
     with st.sidebar:
-        # Bouton de déconnexion
         st.markdown(f"""
         <div style='margin-bottom:20px;'>
             <h3 style='color:#2c3e50;'>Connecté en tant que {st.session_state.username}</h3>
@@ -488,9 +484,23 @@ else:
 
         # Importation des données
         st.subheader("Importer des données")
-        uploaded_files = st.file_uploader("Téléverser des fichiers Excel", type=["xlsx"], accept_multiple_files=True, key="file_uploader")
-        
-        # Charger les données
+        with st.form("file_upload_form", clear_on_submit=True):
+            uploaded_files = st.file_uploader("Téléverser des fichiers Excel", type=["xlsx"], accept_multiple_files=True, key="file_uploader")
+            submit_button = st.form_submit_button("Charger les fichiers")
+            
+            if submit_button and uploaded_files:
+                df = load_data(uploaded_files)
+                if not df.empty:
+                    st.success(f"{len(uploaded_files)} fichier(s) chargé(s) avec succès. Nombre total de lignes : {df.shape[0]}")
+                else:
+                    st.warning("Aucun fichier valide n'a pu être chargé. Veuillez vérifier les fichiers téléversés.")
+                    st.stop()
+            elif submit_button and not uploaded_files:
+                st.warning("Aucun fichier sélectionné. Veuillez téléverser au moins un fichier Excel.")
+                st.stop()
+            else:
+                df = pd.DataFrame()  # DataFrame vide si aucun fichier n'est soumis
+            # Charger les données
         df = load_data(uploaded_files)
         
         if df.empty:
