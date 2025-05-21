@@ -16,17 +16,14 @@ import zipfile
 import sys
 import locale
 
-# Configuration de la page (unchanged)
+# Configuration de la page
 st.set_page_config(page_title="Tableau de bord de la consommation des équipements miniers", layout="wide")
 st.markdown("""
     <style>
-    /* Fond d'écran clair */
     .stApp { 
         background-color: #f5f7fa;
         background-image: none;
     }
-    
-    /* Conteneurs principaux */
     .main-container {
         background-color: white;
         padding: 25px; 
@@ -34,8 +31,6 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         margin-bottom: 20px;
     }
-    
-    /* Titres */
     h1, h2, h3, h4, h5, h6 { 
         color: #2c3e50; 
         font-family: 'Segoe UI', Arial, sans-serif;
@@ -44,8 +39,6 @@ st.markdown("""
         border-bottom: 2px solid #3498db;
         padding-bottom: 10px;
     }
-    
-    /* Cartes de métriques */
     .metric-card {
         background-color: white;
         border-left: 4px solid #3498db; 
@@ -64,8 +57,6 @@ st.markdown("""
         font-size: 30px;
         font-weight: bold;
     }
-    
-    /* Boutons */
     .stButton>button {
         background-color: #3498db; 
         color: white; 
@@ -81,8 +72,6 @@ st.markdown("""
         box-shadow: 0 4px 8px rgba(41,128,185,0.2);
         transform: translateY(-1px);
     }
-    
-    /* Sidebar */
     .css-1d391kg {
         background-color: white;
         box-shadow: 2px 0 15px rgba(0,0,0,0.05);
@@ -90,8 +79,6 @@ st.markdown("""
     .sidebar .sidebar-content {
         background-color: white;
     }
-    
-    /* Onglets */
     .stTabs [role="tablist"] button {
         color: #7f8c8d;
         font-weight: 500;
@@ -102,14 +89,10 @@ st.markdown("""
         border-bottom: 3px solid #3498db;
         background-color: rgba(52,152,219,0.1);
     }
-    
-    /* Tableaux */
     .stDataFrame {
         border-radius: 10px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.05);
     }
-    
-    /* Inputs */
     .stTextInput>div>div>input, 
     .stSelectbox>div>div>select,
     .stDateInput>div>div>input,
@@ -118,8 +101,6 @@ st.markdown("""
         border-radius: 8px;
         padding: 10px 12px;
     }
-    
-    /* Couleurs spécifiques */
     .primary-color {
         color: #3498db;
     }
@@ -129,8 +110,6 @@ st.markdown("""
     .accent-color {
         color: #e74c3c;
     }
-    
-    /* Header */
     .header-container {
         background: linear-gradient(135deg, #3498db 0%, #2c3e50 100%);
         padding: 25px;
@@ -138,8 +117,6 @@ st.markdown("""
         margin-bottom: 25px;
         color: white;
     }
-    
-    /* Cards */
     .analysis-card {
         background: white;
         border-radius: 10px;
@@ -156,7 +133,6 @@ def resource_path(relative_path):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
 
-# Fonctions pour gérer les utilisateurs (unchanged)
 def load_users():
     file_path = resource_path("users.json")
     if os.path.exists(file_path):
@@ -175,7 +151,6 @@ def hash_password(password):
 def check_password(password, hashed):
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-# In load_data function
 def load_data(uploaded_files=None):
     try:
         if uploaded_files is None or not uploaded_files:
@@ -213,11 +188,8 @@ def load_data(uploaded_files=None):
                                         if not all(col in df.columns for col in required_columns):
                                             st.warning(f"Le fichier {filename} dans le ZIP {uploaded_file.name} ne contient pas toutes les colonnes requises : {', '.join(required_columns)}. Il sera ignoré.")
                                             continue
-                                        # Convert CATEGORIE to string and handle NaN
                                         df['CATEGORIE'] = df['CATEGORIE'].astype(str).replace('nan', 'Unknown')
-                                        # Debug: Check CATEGORIE types
                                         st.write(f"Types dans CATEGORIE pour {filename} : {df['CATEGORIE'].apply(type).unique()}")
-                                        # Rest of the processing
                                         st.write(f"Total brut Montant pour {filename} (avant nettoyage) : {df['Montant'].sum():,.2f} DH")
                                         st.write(f"Nombre de lignes initial : {df.shape[0]}")
                                         st.write(f"Lignes avec valeurs manquantes dans {filename} : {df[required_columns].isna().any(axis=1).sum()}")
@@ -258,11 +230,8 @@ def load_data(uploaded_files=None):
                     if not all(col in df.columns for col in required_columns):
                         st.warning(f"Le fichier {uploaded_file.name} ne contient pas toutes les colonnes requises : {', '.join(required_columns)}. Il sera ignoré.")
                         continue
-                    # Convert CATEGORIE to string and handle NaN
                     df['CATEGORIE'] = df['CATEGORIE'].astype(str).replace('nan', 'Unknown')
-                    # Debug: Check CATEGORIE types
                     st.write(f"Types dans CATEGORIE pour {uploaded_file.name} : {df['CATEGORIE'].apply(type).unique()}")
-                    # Rest of the processing
                     st.write(f"Total brut Montant pour {uploaded_file.name} (avant nettoyage) : {df['Montant'].sum():,.2f} DH")
                     st.write(f"Nombre de lignes initial : {df.shape[0]}")
                     st.write(f"Lignes avec valeurs manquantes dans {uploaded_file.name} : {df[required_columns].isna().any(axis=1).sum()}")
@@ -297,10 +266,8 @@ def load_data(uploaded_files=None):
             return pd.DataFrame()
         
         combined_df = pd.concat(dfs, ignore_index=True)
-        # Ensure CATEGORIE is string and filter for DUMPER, FORATION, 10 TONNES
         combined_df['CATEGORIE'] = combined_df['CATEGORIE'].astype(str).replace('nan', 'Unknown')
         combined_df = combined_df[combined_df['CATEGORIE'].str.upper().isin(['DUMPER', 'FORATION', '10 TONNES'])]
-        # Debug: After filtering
         st.write(f"Total Montant après filtrage par catégories (DUMPER, FORATION, 10 TONNES) : {combined_df['Montant'].sum():,.2f} DH")
         st.write(f"Nombre total de lignes après filtrage : {combined_df.shape[0]}")
         st.write(f"Types dans CATEGORIE après filtrage : {combined_df['CATEGORIE'].apply(type).unique()}")
@@ -316,8 +283,6 @@ def load_data(uploaded_files=None):
         st.error(f"Erreur générale lors du chargement des fichiers : {str(e)}")
         return pd.DataFrame()
 
-
-# Rest of the original code (unchanged)
 def load_tonnage_data(uploaded_files=None):
     try:
         if uploaded_files is None or not uploaded_files:
@@ -338,11 +303,9 @@ def load_tonnage_data(uploaded_files=None):
                 continue
 
             st.write(f"Traitement du fichier de tonnage : {uploaded_file.name}, Taille : {uploaded_file.size / 1024 / 1024:.2f} Mo, Type : {'ZIP' if uploaded_file.name.endswith('.zip') else 'Excel'}")
-
             if uploaded_file.size > max_file_size:
                 st.warning(f"Le fichier {uploaded_file.name} dépasse la limite de 200 Mo et sera ignoré.")
                 continue
-
             try:
                 uploaded_file.seek(0)
             except Exception as e:
@@ -563,7 +526,7 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
     
     if not tonnage_df.empty:
         filtered_tonnage_df = tonnage_df.copy()
-        if tonnage_date_range and len(tonnage_date_range) == 2:
+        if tonnage_date_range is not None and len(tonnage_date_range) == 2:
             start_date, end_date = tonnage_date_range
             filtered_tonnage_df = filtered_tonnage_df[
                 (filtered_tonnage_df['DATE'].dt.date >= start_date) & 
@@ -642,7 +605,10 @@ if 'tonnage_file_uploader_key' not in st.session_state:
 if 'uploaded_tonnage_file' not in st.session_state:
     st.session_state.uploaded_tonnage_file = None
 if 'tonnage_date_range' not in st.session_state:
-    st.session_state.tonnage_date_range = None
+    st.session_state.tonnage_date_range = (
+        datetime(2025, 5, 1).date(),
+        datetime(2025, 5, 19).date()
+    )
 
 # Interface de connexion/inscription
 if not st.session_state.logged_in:
@@ -702,7 +668,6 @@ if not st.session_state.logged_in:
                     st.rerun()
 
 else:
-    # Barre latérale pour les filtres et importation
     with st.sidebar:
         st.subheader("Importer des fichiers de consommation")
         st.markdown("**Note** : Plusieurs fichiers Excel (.xlsx) ou ZIP (.zip) peuvent être importés (max 200 Mo par fichier).")
@@ -762,18 +727,15 @@ else:
             st.warning("Aucun équipement ne correspond au terme de recherche.")
         selected_equipment = st.selectbox("Sélectionner l'équipement", equipment_options)
         filtered_data = df.copy()
-        # Debug: Total après chargement initial
         st.write(f"Total Montant des données brutes : {filtered_data['Montant'].sum():,.2f} DH")
         if len(date_range) == 2:
             start_date, end_date = date_range
             filtered_data = filtered_data[(filtered_data['Date'].dt.date >= start_date) & 
                                         (filtered_data['Date'].dt.date <= end_date)]
-            # Debug: Total après filtre de date
             st.write(f"Total Montant après filtre de date : {filtered_data['Montant'].sum():,.2f} DH")
 
         if selected_equipment != "Tous les équipements":
             filtered_data = filtered_data[filtered_data['Desc_CA'] == selected_equipment]
-            # Debug: Total après filtre d'équipement
             st.write(f"Total Montant après filtre d'équipement : {filtered_data['Montant'].sum():,.2f} DH")
 
         if filtered_data.empty:
@@ -839,7 +801,7 @@ else:
                 if not tonnage_df.empty:
                     filtered_tonnage_df = tonnage_df.copy()
                     tonnage_date_range = st.session_state.get('tonnage_date_range', None)
-                    if tonnage_date_range and len(tonnage_date_range) == 2:
+                    if tonnage_date_range is not None and len(tonnage_date_range) == 2:
                         start_date, end_date = tonnage_date_range
                         filtered_tonnage_df = filtered_tonnage_df[
                             (filtered_tonnage_df['DATE'].dt.date >= start_date) &
@@ -1072,7 +1034,6 @@ else:
             )
             st.session_state['selected_engines'] = selected_engines
 
-            # Validate selected_engines types
             selected_engines = [str(engine) for engine in selected_engines]
             st.write(f"Selected engines: {selected_engines}")
             st.write(f"Unique CATEGORIE values: {engine_data['CATEGORIE'].unique()}")
@@ -1176,7 +1137,6 @@ else:
             template='plotly_white'
         )
         st.plotly_chart(fig_comp, use_container_width=True, key="category_comparison")
-
     with tabs[-3]:
         st.markdown("""
         <div class='analysis-card'>
