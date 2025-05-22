@@ -154,7 +154,6 @@ def check_password(password, hashed):
 def load_data(uploaded_files=None):
     try:
         if uploaded_files is None or not uploaded_files:
-            st.warning("Aucun fichier téléversé. Veuillez importer un ou plusieurs fichiers Excel ou ZIP.")
             return pd.DataFrame()
 
         dfs = []
@@ -651,8 +650,61 @@ if not st.session_state.logged_in:
                     st.session_state.page = 'login'
                     st.rerun()
 
+
 else:
     with st.sidebar:
+        if st.session_state.logged_in:
+            if st.button("🚪 Déconnexion", key="logout_button"):
+                st.session_state.logged_in = False
+                st.session_state.username = None
+                st.session_state.page = 'login'
+                st.session_state.uploaded_file = None
+                st.session_state.uploaded_tonnage_file = None
+                st.session_state.file_uploader_key += 1
+                st.session_state.tonnage_file_uploader_key += 1
+                st.session_state.selected_engines = []
+                st.rerun()
+
+    # Nouvelle section d'introduction avant l'import des données
+    if not st.session_state.get('uploaded_file') and not st.session_state.get('uploaded_tonnage_file'):
+    
+        st.markdown("""
+        <div class='header-container'>
+            <h1 style='color: white; text-align:center; margin-top:0;'>📊 Tableau De Bord De La Consommation Des Engins</h1>
+            <p style='color: white; text-align: center; margin-bottom:0'>Suivre et optimiser la consommation des équipements</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div class='analysis-card'>
+            <h2 style='color: #2c3e50; margin-top:0;'>Bienvenue dans le Tableau de Bord de Gestion des Équipements Miniers</h2>
+            <p style='color: #7f8c8d; font-size:16px;'>Ce tableau de bord interactif vous permet d'analyser et optimiser la consommation des équipements miniers ainsi que les données de tonnage des sites. Découvrez ci-dessous les principales fonctionnalités :</p>
+            <h3 style='color: #3498db; margin-top:20px;'>Fonctionnalités principales :</h3>
+            <ul style='color: #2c3e50;'>
+                <li><strong>Analyse des Coûts par Catégorie et Équipement :</strong> Visualisez les coûts totaux et moyens par catégorie (Dumper, Foration, 10 Tonnes) et par équipement spécifique. Identifiez rapidement les équipements ou catégories où des optimisations sont possibles.</li>
+                <li><strong>Filtrage Interactif des Données :</strong> Appliquez des filtres par dates, équipements ou type de consommation pour explorer les données pertinentes. Les tableaux et graphiques se mettent à jour dynamiquement.</li>
+                <li><strong>Comparaison des Performances :</strong> Comparez les coûts entre différentes catégories ou équipements pour détecter les anomalies et identifier les opportunités d'optimisation.</li>
+                <li><strong>Analyse des Tonnes par Sites :</strong> Visualisez les tendances au fil du temps et les totaux par site pour évaluer les performances des sites DS Sud, DS Nord et KA.</li>
+                <li><strong>Génération de Rapports Détailés :</strong> Exportez un rapport Word complet incluant des tableaux, graphiques et recommandations personnalisées pour une analyse approfondie et un partage facile.</li>
+                <li><strong>Recommandations Actionnables :</strong> Recevez des recommandations basées sur les données pour réduire les coûts, améliorer la maintenance préventive et optimiser l'utilisation des équipements.</li>
+            </ul>
+            <h3 style='color: #3498db; margin-top:20px;'>Comment commencer :</h3>
+            <ol style='color: #2c3e50;'>
+                <li>Utilisez le panneau latéral gauche pour importer vos fichiers de consommation et de tonnage.</li>
+                <li>Les fichiers doivent être au format Excel (.xlsx) ou ZIP (.zip).</li>
+                <li>Pour les consommations, les colonnes requises sont : <code>Date</code>, <code>CATEGORIE</code>, <code>Desc_Cat</code>, <code>Desc_CA</code>, <code>Montant</code>.</li>
+                <li>Pour les tonnages, les colonnes requises sont : <code>DATE</code>, <code>DS Sud</code>, <code>DS Nord</code>, <code>KA</code>.</li>
+                <li>Une fois les fichiers chargés, les analyses seront automatiquement disponibles.</li>
+            </ol>
+            <div style='background-color: #e3f2fd; padding: 15px; border-radius: 8px; margin-top: 20px;'>
+                <h4 style='color: #1565c0; margin-top:0;'>Conseil :</h4>
+                <p style='color: #1565c0;'>
+                    Pour une analyse optimale, importez d'abord les fichiers de consommation puis les fichiers de tonnage. Cela permettra de générer des rapports complets avec toutes les données.
+                </p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    with st.sidebar:            
         st.subheader("Importer des fichiers de consommation")
         st.markdown("**Note** : Plusieurs fichiers Excel (.xlsx) ou ZIP (.zip) peuvent être importés (max 200 Mo par fichier).")
         st.markdown("**Fichiers importés** :")
@@ -686,7 +738,6 @@ else:
                 df = load_data(st.session_state.uploaded_file)
 
         if df.empty:
-            st.warning("Aucune donnée disponible. Veuillez téléverser un fichier Excel ou ZIP valide.")
             st.stop()
         
         st.subheader("Filtres")
@@ -915,6 +966,7 @@ else:
         <p style='color: white; text-align: center; margin-bottom:0'>Suivre et optimiser la consommation des équipements</p>
     </div>
     """, unsafe_allow_html=True)
+    
 
     kpi_container = st.container()
     with kpi_container:
