@@ -189,10 +189,6 @@ def load_data(uploaded_files=None):
                                             st.warning(f"Le fichier {filename} dans le ZIP {uploaded_file.name} ne contient pas toutes les colonnes requises : {', '.join(required_columns)}. Il sera ignoré.")
                                             continue
                                         df['CATEGORIE'] = df['CATEGORIE'].astype(str).replace('nan', 'Unknown')
-                                        st.write(f"Types dans CATEGORIE pour {filename} : {df['CATEGORIE'].apply(type).unique()}")
-                                        st.write(f"Total brut Montant pour {filename} (avant nettoyage) : {df['Montant'].sum():,.2f} DH")
-                                        st.write(f"Nombre de lignes initial : {df.shape[0]}")
-                                        st.write(f"Lignes avec valeurs manquantes dans {filename} : {df[required_columns].isna().any(axis=1).sum()}")
                                         if pd.api.types.is_numeric_dtype(df['Date']):
                                             df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
                                         elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
@@ -203,9 +199,6 @@ def load_data(uploaded_files=None):
                                         initial_rows = df.shape[0]
                                         df = df.dropna(subset=['Montant'])
                                         dropped_rows = initial_rows - df.shape[0]
-                                        st.write(f"Lignes supprimées pour Montant NaN dans {filename} : {dropped_rows}")
-                                        st.write(f"Total Montant pour {filename} (après conversion) : {df['Montant'].sum():,.2f} DH")
-                                        st.write(f"Nombre de lignes après conversion : {df.shape[0]}")
                                         df['Mois'] = df['Date'].dt.month_name()
                                         months_fr = {
                                             'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
@@ -231,10 +224,6 @@ def load_data(uploaded_files=None):
                         st.warning(f"Le fichier {uploaded_file.name} ne contient pas toutes les colonnes requises : {', '.join(required_columns)}. Il sera ignoré.")
                         continue
                     df['CATEGORIE'] = df['CATEGORIE'].astype(str).replace('nan', 'Unknown')
-                    st.write(f"Types dans CATEGORIE pour {uploaded_file.name} : {df['CATEGORIE'].apply(type).unique()}")
-                    st.write(f"Total brut Montant pour {uploaded_file.name} (avant nettoyage) : {df['Montant'].sum():,.2f} DH")
-                    st.write(f"Nombre de lignes initial : {df.shape[0]}")
-                    st.write(f"Lignes avec valeurs manquantes dans {uploaded_file.name} : {df[required_columns].isna().any(axis=1).sum()}")
                     if pd.api.types.is_numeric_dtype(df['Date']):
                         df['Date'] = pd.to_datetime(df['Date'], origin='1899-12-30', unit='D')
                     elif not pd.api.types.is_datetime64_any_dtype(df['Date']):
@@ -245,9 +234,6 @@ def load_data(uploaded_files=None):
                     initial_rows = df.shape[0]
                     df = df.dropna(subset=['Montant'])
                     dropped_rows = initial_rows - df.shape[0]
-                    st.write(f"Lignes supprimées pour Montant NaN dans {uploaded_file.name} : {dropped_rows}")
-                    st.write(f"Total Montant pour {uploaded_file.name} (après conversion) : {df['Montant'].sum():,.2f} DH")
-                    st.write(f"Nombre de lignes après conversion : {df.shape[0]}")
                     df['Mois'] = df['Date'].dt.month_name()
                     months_fr = {
                         'January': 'Janvier', 'February': 'Février', 'March': 'Mars',
@@ -268,10 +254,6 @@ def load_data(uploaded_files=None):
         combined_df = pd.concat(dfs, ignore_index=True)
         combined_df['CATEGORIE'] = combined_df['CATEGORIE'].astype(str).replace('nan', 'Unknown')
         combined_df = combined_df[combined_df['CATEGORIE'].str.upper().isin(['DUMPER', 'FORATION', '10 TONNES'])]
-        st.write(f"Total Montant après filtrage par catégories (DUMPER, FORATION, 10 TONNES) : {combined_df['Montant'].sum():,.2f} DH")
-        st.write(f"Nombre total de lignes après filtrage : {combined_df.shape[0]}")
-        st.write(f"Types dans CATEGORIE après filtrage : {combined_df['CATEGORIE'].apply(type).unique()}")
-        st.write(f"Catégories présentes : {combined_df['CATEGORIE'].unique()}")
         
         if combined_df.empty:
             st.error("Aucune donnée pour les catégories DUMPER, FORATION, ou 10 TONNES. Vérifiez les fichiers téléversés.")
