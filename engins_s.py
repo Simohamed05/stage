@@ -532,6 +532,8 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
                 (filtered_tonnage_df['DATE'].dt.date >= start_date) & 
                 (filtered_tonnage_df['DATE'].dt.date <= end_date)
             ]
+        else:
+            doc.add_paragraph("Plage de dates non définie pour les tonnages. Affichage de toutes les données disponibles.")
         if not filtered_tonnage_df.empty:
             doc.add_heading('Tableau des tonnages', level=2)
             max_rows = min(filtered_tonnage_df.shape[0], 100)
@@ -800,9 +802,8 @@ else:
                 tonnage_df = load_tonnage_data(st.session_state.uploaded_tonnage_file)
                 if not tonnage_df.empty:
                     filtered_tonnage_df = tonnage_df.copy()
-                    tonnage_date_range = st.session_state.get('tonnage_date_range', None)
-                    if tonnage_date_range is not None and len(tonnage_date_range) == 2:
-                        start_date, end_date = tonnage_date_range
+                    if st.session_state['tonnage_date_range'] is not None and len(st.session_state['tonnage_date_range']) == 2:
+                        start_date, end_date = st.session_state['tonnage_date_range']
                         filtered_tonnage_df = filtered_tonnage_df[
                             (filtered_tonnage_df['DATE'].dt.date >= start_date) &
                             (filtered_tonnage_df['DATE'].dt.date <= end_date)
@@ -893,6 +894,9 @@ else:
                 })
                 total_montant = table_df['Montant (DH)'].sum()
                 
+                # Debug: Confirm tonnage_date_range and buffer
+                st.write(f"tonnage_date_range for report: {st.session_state['tonnage_date_range']}")
+                
                 report = generate_word_report(
                     filtered_data,
                     total_cost,
@@ -905,20 +909,23 @@ else:
                     total_montant,
                     figures,
                     tonnage_df,
-                    tonnage_date_range
+                    st.session_state['tonnage_date_range']
                 )
                 
-                st.session_state['report_buffer'] = report
+                # Debug: Verify buffer
+                st.write(f"Report buffer type: {type(report)}")
+                st.write(f"Report buffer size: {report.getbuffer().nbytes / 1024:.2f} KB")
+                
+                # Render download button immediately
+                st.download_button(
+                    label="📥 Télécharger le rapport Word",
+                    data=report,
+                    file_name=f"Rapport_Consommation_{datetime.now().strftime('%Y%m%d_%H%M')}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="download_button"
+                )
+                
                 st.success("Rapport généré avec succès!")
-        
-        if 'report_buffer' in st.session_state:
-            st.download_button(
-                label="📥 Télécharger le rapport Word",
-                data=st.session_state['report_buffer'],
-                file_name=f"Rapport_Consommation_{datetime.now().strftime('%Y%m%d_%H%M')}.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="download_button"
-            )
 
     st.markdown("""
     <div class='header-container'>
