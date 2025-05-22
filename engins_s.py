@@ -1042,10 +1042,7 @@ else:
             st.session_state['selected_engines'] = selected_engines
 
             selected_engines = [str(engine) for engine in selected_engines]
-            st.write(f"Selected engines: {selected_engines}")
-            st.write(f"Unique CATEGORIE values: {engine_data['CATEGORIE'].unique()}")
-            st.write(f"CATEGORIE types: {engine_data['CATEGORIE'].apply(type).unique()}")
-
+            
             if "Tous les types" not in selected_engines and selected_engines:
                 try:
                     engine_data = engine_data[engine_data['CATEGORIE'].isin(selected_engines)]
