@@ -361,7 +361,104 @@ def load_tonnage_data(uploaded_files=None):
     except Exception as e:
         st.error(f"Erreur générale lors du chargement des fichiers de tonnage : {str(e)}")
         return pd.DataFrame()
+def load_hm_data(uploaded_files=None):
+    try:
+        if uploaded_files is None or not uploaded_files:
+            st.warning("Aucun fichier d'heures de marche téléversé. Veuillez importer un ou plusieurs fichiers Excel ou ZIP.")
+            return pd.DataFrame()
 
+        dfs = []
+        required_columns = ['ENGINS']  # Assuming 'ENGINS' is the date column
+        max_file_size = 200 * 1024 * 1024  # 200 MB in bytes
+
+        if not isinstance(uploaded_files, (list, tuple)):
+            st.error(f"Erreur : uploaded_files doit être une liste ou un tuple, reçu : {type(uploaded_files)}")
+            return pd.DataFrame()
+
+        for uploaded_file in uploaded_files:
+            if not hasattr(uploaded_file, 'name') or not hasattr(uploaded_file, 'read'):
+                st.warning(f"Élément invalide dans uploaded_files : {type(uploaded_file)}. Cet élément sera ignoré.")
+                continue
+
+            st.write(f"Traitement du fichier d'heures de marche : {uploaded_file.name}, Taille : {uploaded_file.size / 1024 / 1024:.2f} Mo, Type : {'ZIP' if uploaded_file.name.endswith('.zip') else 'Excel'}")
+            if uploaded_file.size > max_file_size:
+                st.warning(f"Le fichier {uploaded_file.name} dépasse la limite de 200 Mo et sera ignoré.")
+                continue
+            try:
+                uploaded_file.seek(0)
+            except Exception as e:
+                st.warning(f"Erreur lors de la réinitialisation du pointeur pour {uploaded_file.name} : {str(e)}. Ce fichier sera ignoré.")
+                continue
+
+            if uploaded_file.name.endswith('.zip'):
+                try:
+                    file_bytes = uploaded_file.read()
+                    if not file_bytes:
+                        st.warning(f"Le fichier ZIP {uploaded_file.name} est vide et sera ignoré.")
+                        continue
+                    if not isinstance(file_bytes, bytes):
+                        st.warning(f"Le contenu lu de {uploaded_file.name} n'est pas un objet bytes : {type(file_bytes)}. Ce fichier sera ignoré.")
+                        continue
+                    file_stream = io.BytesIO(file_bytes)
+                    with zipfile.ZipFile(file_stream, 'r') as z:
+                        for filename in z.namelist():
+                            if filename.endswith('.xlsx'):
+                                with z.open(filename) as f:
+                                    try:
+                                        df = pd.read_excel(f)
+                                        if not all(col in df.columns for col in required_columns):
+                                            st.warning(f"Le fichier {filename} dans le ZIP {uploaded_file.name} ne contient pas la colonne requise : {'ENGINS'}. Il sera ignoré.")
+                                            continue
+                                        if pd.api.types.is_numeric_dtype(df['ENGINS']):
+                                            df['ENGINS'] = pd.to_datetime(df['ENGINS'], origin='1899-12-30', unit='D')
+                                        elif not pd.api.types.is_datetime64_any_dtype(df['ENGINS']):
+                                            df['ENGINS'] = pd.to_datetime(df['ENGINS'], errors='coerce')
+                                        df = df.dropna(subset=required_columns)
+                                        for col in df.columns[1:]:  # Skip ENGINS column
+                                            df[col] = pd.to_numeric(df[col], errors='coerce')
+                                        df['TOTAL_HOURS'] = df.iloc[:, 1:].sum(axis=1)
+                                        dfs.append(df)
+                                    except Exception as e:
+                                        st.warning(f"Erreur lors du chargement du fichier {filename} dans le ZIP {uploaded_file.name} : {str(e)}")
+                                        continue
+                except zipfile.BadZipFile:
+                    st.warning(f"Le fichier {uploaded_file.name} n'est pas un fichier ZIP valide et sera ignoré.")
+                    continue
+                except Exception as e:
+                    st.warning(f"Erreur lors du traitement du fichier ZIP {uploaded_file.name} : {str(e)}")
+                    continue
+            else:
+                try:
+                    df = pd.read_excel(uploaded_file)
+                    if not all(col in df.columns for col in required_columns):
+                        st.warning(f"Le fichier {uploaded_file.name} ne contient pas la colonne requise : {'ENGINS'}. Il sera ignoré.")
+                        continue
+                    if pd.api.types.is_numeric_dtype(df['ENGINS']):
+                        df['ENGINS'] = pd.to_datetime(df['ENGINS'], origin='1899-12-30', unit='D')
+                    elif not pd.api.types.is_datetime64_any_dtype(df['ENGINS']):
+                        df['ENGINS'] = pd.to_datetime(df['ENGINS'], errors='coerce')
+                    df = df.dropna(subset=required_columns)
+                    for col in df.columns[1:]:  # Skip ENGINS column
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                    df['TOTAL_HOURS'] = df.iloc[:, 1:].sum(axis=1)
+                    dfs.append(df)
+                except Exception as e:
+                    st.warning(f"Erreur lors du chargement du fichier {uploaded_file.name} : {str(e)}. Ce fichier sera ignoré.")
+                    continue
+
+        if not dfs:
+            st.error("Aucun fichier d'heures de marche valide n'a pu être chargé. Veuillez vérifier les fichiers téléversés.")
+            return pd.DataFrame()
+
+        combined_df = pd.concat(dfs, ignore_index=True)
+        combined_df = combined_df.drop_duplicates()
+
+        st.success(f"{len(dfs)} fichier(s) d'heures de marche valide(s) chargé(s) avec succès. Nombre total de lignes : {combined_df.shape[0]}")
+        return combined_df
+    except Exception as e:
+        st.error(f"Erreur générale lors du chargement des fichiers d'heures de marche : {str(e)}")
+        return pd.DataFrame()
+    
 def compute_monthly_costs(data):
     monthly_data = data.groupby('Mois')['Montant'].sum().reset_index()
     month_order = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
@@ -373,7 +470,7 @@ def compute_category_breakdown(data):
     return data.groupby('Desc_Cat')['Montant'].sum().reset_index()
 
 def generate_word_report(filtered_data, total_cost, global_avg, category_stats, most_consumed_per_cat, 
-                        pivot_engine, selected_engines, table_df, total_montant, figures, tonnage_df, tonnage_date_range):
+                        pivot_engine, selected_engines, table_df, total_montant, figures, tonnage_df, tonnage_date_range, hm_df, hm_date_range):
     doc = Document()
     
     title = doc.add_heading('Rapport Complet de Consommation des Équipements Miniers', 0)
@@ -383,7 +480,7 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
     doc.add_paragraph(f"Nombre d'équipements analysés: {filtered_data['Desc_CA'].nunique()}")
     
     doc.add_heading('Table des Matières', level=1)
-    doc.add_paragraph('1. Indicateurs Clés\n2. Analyse par Catégorie\n3. Analyse Comparative\n4. Données Détailées\n5. Recommandations\n6. Analyse des Tonnages', style='ListBullet')
+    doc.add_paragraph('1. Indicateurs Clés\n2. Analyse par Catégorie\n3. Analyse Comparative\n4. Données Détailées\n5. Recommandations\n6. Analyse des Tonnages\n7. Analyse des Heures de Marche', style='ListBullet')
     
     doc.add_heading('1. Indicateurs Clés', level=1)
     table = doc.add_table(rows=3, cols=2)
@@ -551,20 +648,70 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
                 doc.add_heading('Tonnage total par site', level=2)
                 img_bytes = pio.to_image(figures["Tonnage total par site"], format='png', scale=1)
                 doc.add_picture(BytesIO(img_bytes), width=Inches(6))
+    doc.add_heading('7. Analyse des Heures de Marche', level=1)
+    doc.add_paragraph('Cette section présente les données des heures de marche pour les équipements miniers.')
+    
+    if not hm_df.empty:
+        filtered_hm_df = hm_df.copy()
+        if hm_date_range is not None and len(hm_date_range) == 2:
+            start_date, end_date = hm_date_range
+            filtered_hm_df = filtered_hm_df[
+                (filtered_hm_df['ENGINS'].dt.date >= start_date) & 
+                (filtered_hm_df['ENGINS'].dt.date <= end_date)
+            ]
+        else:
+            doc.add_paragraph("Plage de dates non définie pour les heures de marche. Affichage de toutes les données disponibles.")
+        if not filtered_hm_df.empty:
+            doc.add_heading('Tableau des heures de marche', level=2)
+            max_rows = min(filtered_hm_df.shape[0], 100)
+            equipment_columns = [col for col in filtered_hm_df.columns if col not in ['ENGINS', 'TOTAL_HOURS']]
+            table = doc.add_table(rows=max_rows+2, cols=len(equipment_columns)+2)
+            table.style = 'Table Grid'
+            
+            table_rows = table.rows
+            headers = ['Date'] + equipment_columns + ['Total (h)']
+            for j, col in enumerate(headers):
+                table_rows[0].cells[j].text = col
+            
+            display_hm_df = filtered_hm_df[['ENGINS'] + equipment_columns + ['TOTAL_HOURS']].copy()
+            display_hm_df['ENGINS'] = display_hm_df['ENGINS'].dt.strftime('%d/%m/%Y')
+            
+            for i in range(max_rows):
+                row_cells = table_rows[i+1].cells
+                for j, value in enumerate(display_hm_df.iloc[i]):
+                    row_cells[j].text = str(value) if j == 0 else f"{value:,.2f} h"
+            
+            total_hours = display_hm_df[equipment_columns].sum().to_dict()
+            total_sum = display_hm_df['TOTAL_HOURS'].sum()
+            table_rows[max_rows+1].cells[0].text = 'Total'
+            for j, col in enumerate(equipment_columns, 1):
+                table_rows[max_rows+1].cells[j].text = f"{total_hours[col]:,.2f} h"
+            table_rows[max_rows+1].cells[-1].text = f"{total_sum:,.2f} h"
+            
+            if "Comparaison des heures de marche par équipement" in figures:
+                doc.add_heading('Comparaison des heures de marche par équipement', level=2)
+                img_bytes = pio.to_image(figures["Comparaison des heures de marche par équipement"], format='png', scale=1)
+                doc.add_picture(BytesIO(img_bytes), width=Inches(6))
+            
+            if "Heures totales par équipement" in figures:
+                doc.add_heading('Heures totales par équipement', level=2)
+                img_bytes = pio.to_image(figures["Heures totales par équipement"], format='png', scale=1)
+                doc.add_picture(BytesIO(img_bytes), width=Inches(6))
     else:
-        doc.add_paragraph("Aucune donnée de tonnage disponible pour la période sélectionnée.")
+        doc.add_paragraph("Aucune donnée d'heures de marche disponible pour la période sélectionnée.")
     
     doc.add_heading('Conclusion', level=1)
     doc.add_paragraph(
-        "Ce rapport fournit une analyse complète des coûts de consommation des équipements miniers et des tonnages des sites. "
-        "Les graphiques et tableaux présentés permettent d'identifier les principaux postes de dépenses "
-        "et de prendre des décisions éclairées pour optimiser les coûts d'exploitation et la productivité."
+        "Ce rapport fournit une analyse complète des coûts de consommation des équipements miniers, des tonnages des sites, "
+        "et des heures de marche des équipements. Les graphiques et tableaux présentés permettent d'identifier les principaux "
+        "post_modes de dépenses, les performances des sites, et l'utilisation des équipements pour optimiser les coûts d'exploitation "
+        "et la productivité."
     )
     
     section = doc.sections[0]
     footer = section.footer
     footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
-    footer_para.text = f"Généré le {datetime.now().strftime('%d/%m/%Y')} - Tableau de bord de consommation des équipements miniers"
+    footer_para.text = f"Généré le {datetime.now().strftime('%d/%m/%Y')} - Tableau de bord de consommation et heures de marche des équipements miniers"
     footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
     buffer = BytesIO()
@@ -592,7 +739,16 @@ if 'tonnage_date_range' not in st.session_state:
         datetime(2025, 5, 1).date(),
         datetime(2025, 5, 19).date()
     )
-
+# Add to the session state initialization section
+if 'hm_file_uploader_key' not in st.session_state:
+    st.session_state.hm_file_uploader_key = 0
+if 'uploaded_hm_file' not in st.session_state:
+    st.session_state.uploaded_hm_file = None
+if 'hm_date_range' not in st.session_state:
+    st.session_state.hm_date_range = (
+        datetime(2025, 5, 1).date(),
+        datetime(2025, 5, 19).date()
+    )
 # Interface de connexion/inscription
 if not st.session_state.logged_in:
     st.markdown("""
@@ -786,6 +942,7 @@ else:
         most_consumed_per_cat = most_consumed_per_cat.loc[most_consumed_per_cat.groupby('CATEGORIE')['Montant'].idxmax()]
         
         st.subheader("Exportation")
+        # Update the report generation block in the sidebar
         if st.button("📄 Générer un rapport Word complet"):
             with st.spinner("Génération du rapport en cours..."):
                 figures = {}
@@ -890,6 +1047,62 @@ else:
                             template='plotly_white'
                         )
                         figures['Tonnage total par site'] = fig_total_tonnage
+
+                hm_df = load_hm_data(st.session_state.uploaded_hm_file)
+                if not hm_df.empty:
+                    filtered_hm_df = hm_df.copy()
+                    if st.session_state['hm_date_range'] is not None and len(st.session_state['hm_date_range']) == 2:
+                        start_date, end_date = st.session_state['hm_date_range']
+                        filtered_hm_df = filtered_hm_df[
+                            (filtered_hm_df['ENGINS'].dt.date >= start_date) &
+                            (filtered_hm_df['ENGINS'].dt.date <= end_date)
+                        ]
+                    if not filtered_hm_df.empty:
+                        equipment_columns = [col for col in filtered_hm_df.columns if col not in ['ENGINS', 'TOTAL_HOURS']]
+                        hm_melted = filtered_hm_df.melt(
+                            id_vars=['ENGINS'],
+                            value_vars=equipment_columns,
+                            var_name='Équipement',
+                            value_name='Heures'
+                        )
+                        fig_hm = px.line(
+                            hm_melted,
+                            x='ENGINS',
+                            y='Heures',
+                            color='Équipement',
+                            title='Comparaison des heures de marche par équipement au fil du temps',
+                            height=400
+                        )
+                        fig_hm.update_layout(
+                            xaxis_title="Date",
+                            yaxis_title="Heures de marche (h)",
+                            template='plotly_white',
+                            legend_title="Équipement"
+                        )
+                        figures['Comparaison des heures de marche par équipement'] = fig_hm
+
+                        total_hm_df = pd.DataFrame({
+                            'Équipement': equipment_columns,
+                            'Heures Totales': [filtered_hm_df[col].sum() for col in equipment_columns]
+                        })
+                        fig_total_hm = px.bar(
+                            total_hm_df,
+                            x='Équipement',
+                            y='Heures Totales',
+                            title='Heures totales par équipement',
+                            height=400,
+                            text='Heures Totales'
+                        )
+                        fig_total_hm.update_traces(
+                            texttemplate='%{text:,.0f} h',
+                            textposition='auto'
+                        )
+                        fig_total_hm.update_layout(
+                            xaxis_title="Équipement",
+                            yaxis_title="Heures totales (h)",
+                            template='plotly_white'
+                        )
+                        figures['Heures totales par équipement'] = fig_total_hm
                 
                 pivot_engine = pd.DataFrame()
                 selected_engines = st.session_state.get('selected_engines', [])
@@ -905,7 +1118,7 @@ else:
                         margins_name='Total'
                     ).round(2)
                 elif not filtered_data.empty:
-                    pivot_engine = pd.pivot_table(
+                    pivot_data = pd.pivot_table(
                         filtered_data,
                         values='Montant',
                         index='Desc_CA',
@@ -927,9 +1140,6 @@ else:
                 })
                 total_montant = table_df['Montant (DH)'].sum()
                 
-                # Debug: Confirm tonnage_date_range and buffer
-                st.write(f"tonnage_date_range for report: {st.session_state['tonnage_date_range']}")
-                
                 report = generate_word_report(
                     filtered_data,
                     total_cost,
@@ -942,14 +1152,11 @@ else:
                     total_montant,
                     figures,
                     tonnage_df,
-                    st.session_state['tonnage_date_range']
+                    st.session_state['tonnage_date_range'],
+                    hm_df,
+                    st.session_state['hm_date_range']
                 )
                 
-                # Debug: Verify buffer
-                st.write(f"Report buffer type: {type(report)}")
-                st.write(f"Report buffer size: {report.getbuffer().nbytes / 1024:.2f} KB")
-                
-                # Render download button immediately
                 st.download_button(
                     label="📥 Télécharger le rapport Word",
                     data=report,
@@ -959,7 +1166,6 @@ else:
                 )
                 
                 st.success("Rapport généré avec succès!")
-
     st.markdown("""
     <div class='header-container'>
         <h1 style='color: white; text-align:center; margin-top:0;'>📊 Tableau De Bord De La Consommation Des Engins</h1>
@@ -1115,7 +1321,7 @@ else:
 
     tabs = st.tabs(
         [f"📋 {cat}" for cat in sorted(filtered_data['CATEGORIE'].unique())] + 
-        ["📊 Analyse comparative", "💡 Recommandations", "📋 Tableau des équipements", "📈 Tonnage des Sites"]
+        ["📊 Analyse comparative", "💡 Recommandations", "📋 Tableau des équipements", "📈 Tonnage des Sites", "⏰ Heures de Marche"]
     )
 
     for i, cat in enumerate(sorted(filtered_data['CATEGORIE'].unique())):
@@ -1149,7 +1355,7 @@ else:
             )
             st.plotly_chart(fig2, use_container_width=True, key=f"equip_sum_{cat}")
 
-    with tabs[-4]:
+    with tabs[-5]:
         st.markdown("""
         <div class='analysis-card'>
             <h2 style='color: #2c3e50; margin-top:0;'>Analyse comparative</h2>
@@ -1175,7 +1381,7 @@ else:
             template='plotly_white'
         )
         st.plotly_chart(fig_comp, use_container_width=True, key="category_comparison")
-    with tabs[-3]:
+    with tabs[-4]:
         st.markdown("""
         <div class='analysis-card'>
             <h2 style='color: #2c3e50; margin-top:0;'>Recommandations</h2>
@@ -1209,7 +1415,7 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-    with tabs[-2]:
+    with tabs[-3]:
         st.markdown("""
         <div class='analysis-card'>
             <h2 style='color: #2c3e50; margin-top:0;'>Tableau de la consommation des équipements</h2>
@@ -1282,7 +1488,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-    with tabs[-1]:
+    with tabs[-2]:
         st.markdown("""
         <div class='analysis-card'>
             <h2 style='color: #2c3e50; margin-top:0;'>Tonnage des Sites</h2>
@@ -1450,3 +1656,163 @@ else:
                     template='plotly_white'
                 )
                 st.plotly_chart(fig_total_tonnage, use_container_width=True, key="total_tonnage_comparison")
+    with tabs[-1]:
+        st.markdown("""
+        <div class='analysis-card'>
+            <h2 style='color: #2c3e50; margin-top:0;'>Heures de Marche des Équipements</h2>
+            <p style='color: #7f8c8d;'>Comparaison des heures de marche pour les équipements miniers</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("<h3 style='color: #2c3e50;'>Importer des fichiers d'heures de marche</h3>", unsafe_allow_html=True)
+        st.markdown("**Note** : Plusieurs fichiers Excel (.xlsx) ou ZIP (.zip) peuvent être importés (max 200 Mo par fichier).")
+        st.markdown("**Fichiers importés** :")
+        if st.session_state.uploaded_hm_file:
+            try:
+                st.write(", ".join([f.name for f in st.session_state.uploaded_hm_file]))
+            except AttributeError:
+                st.error("Erreur : Les fichiers d'heures de marche stockés sont invalides. Veuillez réimporter les fichiers.")
+                st.session_state.uploaded_hm_file = None
+        else:
+            st.write("Aucun fichier d'heures de marche importé.")
+
+        hm_df = pd.DataFrame()
+
+        with st.form("hm_file_upload_form", clear_on_submit=True):
+            uploaded_hm_files = st.file_uploader(
+                "Téléverser des fichiers Excel ou ZIP pour les heures de marche (max 200 Mo par fichier)",
+                type=["xlsx", "zip"],
+                accept_multiple_files=True,
+                key=f"hm_file_uploader_{st.session_state.hm_file_uploader_key}"
+            )
+            submit_hm_button = st.form_submit_button("Charger les fichiers d'heures de marche")
+
+            if submit_hm_button:
+                if uploaded_hm_files:
+                    st.session_state.uploaded_hm_file = uploaded_hm_files
+                    st.session_state.hm_file_uploader_key += 1
+                    hm_df = load_hm_data(st.session_state.uploaded_hm_file)
+                    if not hm_df.empty:
+                        st.success(f"Fichiers d'heures de marche chargés avec succès. Nombre total de lignes : {hm_df.shape[0]}")
+                    else:
+                        st.warning("Aucun fichier d'heures de marche valide n'a pu être chargé. Veuillez vérifier les fichiers téléversés.")
+                        st.session_state.uploaded_hm_file = None
+                else:
+                    st.warning("Aucun fichier d'heures de marche sélectionné. Veuillez téléverser un ou plusieurs fichiers Excel ou ZIP.")
+            else:
+                if st.session_state.uploaded_hm_file:
+                    hm_df = load_hm_data(st.session_state.uploaded_hm_file)
+
+        if hm_df.empty:
+            st.warning("Aucune donnée d'heures de marche disponible. Veuillez téléverser un fichier Excel ou ZIP valide.")
+        else:
+            st.markdown("<h3 style='color: #2c3e50;'>Filtrer par plage de dates</h3>", unsafe_allow_html=True)
+            default_hm_start = hm_df['ENGINS'].min().date() if not hm_df.empty else datetime.today().date()
+            default_hm_end = hm_df['ENGINS'].max().date() if not hm_df.empty else datetime.today().date()
+            hm_date_range = st.date_input(
+                "Période pour les heures de marche",
+                value=(default_hm_start, default_hm_end),
+                min_value=default_hm_start,
+                max_value=default_hm_end,
+                help="Choisir une plage de dates pour filtrer les données d'heures de marche",
+                key="hm_date_range"
+            )
+
+            filtered_hm_df = hm_df.copy()
+            if len(hm_date_range) == 2:
+                start_date, end_date = hm_date_range
+                filtered_hm_df = filtered_hm_df[
+                    (filtered_hm_df['ENGINS'].dt.date >= start_date) & 
+                    (filtered_hm_df['ENGINS'].dt.date <= end_date)
+                ]
+
+            if filtered_hm_df.empty:
+                st.warning("Aucune donnée d'heures de marche disponible après filtrage. Veuillez ajuster les filtres.")
+            else:
+                st.markdown("<h3 style='color: #2c3e50;'>Tableau des heures de marche</h3>", unsafe_allow_html=True)
+                equipment_columns = [col for col in filtered_hm_df.columns if col not in ['ENGINS', 'TOTAL_HOURS']]
+                display_hm_df = filtered_hm_df[['ENGINS'] + equipment_columns + ['TOTAL_HOURS']].copy()
+                display_hm_df['ENGINS'] = display_hm_df['ENGINS'].dt.strftime('%d/%m/%Y')
+                display_hm_df = display_hm_df.rename(columns={
+                    'ENGINS': 'Date',
+                    'TOTAL_HOURS': 'Total (h)'
+                })
+                for col in equipment_columns:
+                    display_hm_df = display_hm_df.rename(columns={col: f"{col} (h)"})
+
+                total_hours = display_hm_df[[f"{col} (h)" for col in equipment_columns]].sum().to_dict()
+                total_sum = display_hm_df['Total (h)'].sum()
+
+                st.dataframe(
+                    display_hm_df.style.format({
+                        **{f"{col} (h)": '{:,.2f} h' for col in equipment_columns},
+                        'Total (h)': '{:,.2f} h',
+                        'Date': lambda x: x if x else ''
+                    }).set_properties(**{
+                        'background-color': 'white',
+                        'border': '1px solid #dfe6e9',
+                        'text-align': 'center',
+                        'color': '#2c3e50'
+                    }).set_table_styles([
+                        {'selector': 'th', 'props': [('background-color', 'white'), ('color', '#3498db'), ('font-weight', 'bold')]}
+                    ]),
+                    height=600,
+                    use_container_width=True
+                )
+
+                st.markdown(f"""
+                <div style='background-color: white; padding:10px; border-radius:10px; margin-top:10px; border: 1px solid #dfe6e9;'>
+                    <p style='color: #2c3e50; font-size:16px; font-weight:bold; text-align:right;'>
+                        {', '.join([f"Total {col}: {total_hours[f'{col} (h)']:,.2f} h" for col in equipment_columns])}
+                        | Total Cumulé: {total_sum:,.2f} h
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+
+                st.markdown("<h3 style='color: #2c3e50;'>Comparaison des heures de marche par équipement</h3>", unsafe_allow_html=True)
+                hm_melted = filtered_hm_df.melt(
+                    id_vars=['ENGINS'],
+                    value_vars=equipment_columns,
+                    var_name='Équipement',
+                    value_name='Heures'
+                )
+                fig_hm = px.line(
+                    hm_melted,
+                    x='ENGINS',
+                    y='Heures',
+                    color='Équipement',
+                    title='Comparaison des heures de marche par équipement au fil du temps',
+                    height=500,
+                    markers=True
+                )
+                fig_hm.update_layout(
+                    xaxis_title="Date",
+                    yaxis_title="Heures de marche (h)",
+                    template='plotly_white',
+                    legend_title="Équipement",
+                    xaxis={'tickangle': 45}
+                )
+                st.plotly_chart(fig_hm, use_container_width=True, key="hm_comparison")
+
+                total_hm_df = pd.DataFrame({
+                    'Équipement': equipment_columns,
+                    'Heures Totales': [filtered_hm_df[col].sum() for col in equipment_columns]
+                })
+                fig_total_hm = px.bar(
+                    total_hm_df,
+                    x='Équipement',
+                    y='Heures Totales',
+                    title='Heures totales par équipement',
+                    height=400,
+                    text='Heures Totales'
+                )
+                fig_total_hm.update_traces(
+                    texttemplate='%{text:,.0f} h',
+                    textposition='auto'
+                )
+                fig_total_hm.update_layout(
+                    xaxis_title="Équipement",
+                    yaxis_title="Heures totales (h)",
+                    template='plotly_white'
+                )
+                st.plotly_chart(fig_total_hm, use_container_width=True, key="total_hm_comparison")            
