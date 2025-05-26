@@ -1769,50 +1769,235 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-                st.markdown("<h3 style='color: #2c3e50;'>Comparaison des heures de marche par équipement</h3>", unsafe_allow_html=True)
-                hm_melted = filtered_hm_df.melt(
-                    id_vars=['ENGINS'],
-                    value_vars=equipment_columns,
-                    var_name='Équipement',
-                    value_name='Heures'
-                )
-                fig_hm = px.line(
-                    hm_melted,
-                    x='ENGINS',
-                    y='Heures',
-                    color='Équipement',
-                    title='Comparaison des heures de marche par équipement au fil du temps',
-                    height=500,
-                    markers=True
-                )
-                fig_hm.update_layout(
-                    xaxis_title="Date",
-                    yaxis_title="Heures de marche (h)",
-                    template='plotly_white',
-                    legend_title="Équipement",
-                    xaxis={'tickangle': 45}
-                )
-                st.plotly_chart(fig_hm, use_container_width=True, key="hm_comparison")
+                # Changement dans la section des heures de marche, pour le graphique "Comparaison des heures de marche par équipement"
+                # Changement dans la section des heures de marche, pour le graphique "Comparaison des heures de marche par équipement"
+                # Changement dans la section des heures de marche, pour le graphique "Rendement des engins et relation avec la consommation"
+                # Changement dans la section des heures de marche, pour le graphique "Rendement des engins et relation avec la consommation et le tonnage"
+                # 
+                st.markdown("<h3 style='color: #2c3e50;'>Rendement et Consommation des Engins</h3>", unsafe_allow_html=True)
 
-                total_hm_df = pd.DataFrame({
-                    'Équipement': equipment_columns,
-                    'Heures Totales': [filtered_hm_df[col].sum() for col in equipment_columns]
-                })
-                fig_total_hm = px.bar(
-                    total_hm_df,
-                    x='Équipement',
-                    y='Heures Totales',
-                    title='Heures totales par équipement',
-                    height=400,
-                    text='Heures Totales'
-                )
-                fig_total_hm.update_traces(
-                    texttemplate='%{text:,.0f} h',
-                    textposition='auto'
-                )
-                fig_total_hm.update_layout(
-                    xaxis_title="Équipement",
-                    yaxis_title="Heures totales (h)",
-                    template='plotly_white'
-                )
-                st.plotly_chart(fig_total_hm, use_container_width=True, key="total_hm_comparison")            
+                # Vérifier que les données de tonnage, d'heures de marche et de consommation sont disponibles
+                if hm_df.empty or tonnage_df.empty or filtered_data.empty:
+                    st.warning("Données insuffisantes pour calculer le rendement. Veuillez téléverser les fichiers de tonnage, d'heures de marche et de consommation.")
+                else:
+                    filtered_hm_df = hm_df.copy()
+                    filtered_tonnage_df = tonnage_df.copy()
+                    filtered_data_df = filtered_data.copy()
+
+                    # Appliquer les filtres de date
+                    if len(st.session_state['hm_date_range']) == 2:
+                        start_date, end_date = st.session_state['hm_date_range']
+                        filtered_hm_df = filtered_hm_df[
+                            (filtered_hm_df['ENGINS'].dt.date >= start_date) &
+                            (filtered_hm_df['ENGINS'].dt.date <= end_date)
+                        ]
+                    if len(st.session_state['tonnage_date_range']) == 2:
+                        start_date, end_date = st.session_state['tonnage_date_range']
+                        filtered_tonnage_df = filtered_tonnage_df[
+                            (filtered_tonnage_df['DATE'].dt.date >= start_date) &
+                            (filtered_tonnage_df['DATE'].dt.date <= end_date)
+                        ]
+                    if len(date_range) == 2:
+                        start_date, end_date = date_range
+                        filtered_data_df = filtered_data_df[
+                            (filtered_data_df['Date'].dt.date >= start_date) &
+                            (filtered_data_df['Date'].dt.date <= end_date)
+                        ]
+
+                    if filtered_hm_df.empty or filtered_tonnage_df.empty or filtered_data_df.empty:
+                        st.warning("Aucune donnée disponible après filtrage. Veuillez ajuster les filtres.")
+                    else:
+                        # Calculer les heures totales par engin
+                        equipment_columns = [col for col in filtered_hm_df.columns if col not in ['ENGINS', 'TOTAL_HOURS']]
+                        total_hours = filtered_hm_df[equipment_columns].sum()
+
+                        # Déterminer la catégorie de chaque engin, avec AD 30 comme DUMPER
+                        efficiency_df = pd.DataFrame({
+                            'Équipement': equipment_columns,
+                            'Heures Totales': total_hours.values,
+                            'Catégorie': [
+                                'DUMPER' if 'AD30' in equip.upper() or 
+                                (equip in filtered_data_df['Desc_CA'].values and 
+                                filtered_data_df[filtered_data_df['Desc_CA'] == equip]['CATEGORIE'].iloc[0] == 'DUMPER')
+                                else filtered_data_df[filtered_data_df['Desc_CA'] == equip]['CATEGORIE'].iloc[0] 
+                                if equip in filtered_data_df['Desc_CA'].values else 'Unknown'
+                                for equip in equipment_columns
+                            ]
+                        })
+
+                        # Calculer le tonnage total à partir de tonnage_df
+                        total_tonnage = {
+                            'DS Sud': filtered_tonnage_df['DS Sud'].sum(),
+                            'DS Nord': filtered_tonnage_df['DS Nord'].sum(),
+                            'KA': filtered_tonnage_df['KA'].sum()
+                        }
+                        total_tonnage_sum = sum(total_tonnage.values())
+
+                        # Répartir le tonnage proportionnellement aux heures de marche par catégorie
+                        efficiency_df['Tonnage Estimé'] = 0.0
+                        for category in efficiency_df['Catégorie'].unique():
+                            if category == 'Unknown':
+                                continue
+                            category_equipments = efficiency_df[efficiency_df['Catégorie'] == category]['Équipement']
+                            total_hours_category = efficiency_df[efficiency_df['Catégorie'] == category]['Heures Totales'].sum()
+                            if total_hours_category > 0:
+                                # Supposer que chaque catégorie contribue également à tous les sites
+                                tonnage_per_category = total_tonnage_sum / len(efficiency_df['Catégorie'].unique())
+                                for equip in category_equipments:
+                                    hours = efficiency_df[efficiency_df['Équipement'] == equip]['Heures Totales'].iloc[0]
+                                    efficiency_df.loc[efficiency_df['Équipement'] == equip, 'Tonnage Estimé'] = (hours / total_hours_category) * tonnage_per_category
+
+                        # Calculer le rendement (tonnage/heure)
+                        efficiency_df['Rendement'] = efficiency_df['Tonnage Estimé'] / efficiency_df['Heures Totales']
+                        efficiency_df['Rendement'] = efficiency_df['Rendement'].replace([np.inf, -np.inf], np.nan).fillna(0)
+
+                        # Calculer la consommation totale par engin
+                        consumption_df = filtered_data_df.groupby('Desc_CA')['Montant'].sum().reset_index()
+                        consumption_df = consumption_df[consumption_df['Desc_CA'].isin(equipment_columns)]
+                        consumption_df = consumption_df.rename(columns={'Desc_CA': 'Équipement', 'Montant': 'Consommation (DH)'})
+
+                        # Fusionner les données
+                        analysis_df = pd.merge(efficiency_df, consumption_df, on='Équipement', how='left')
+                        analysis_df['Consommation (DH)'] = analysis_df['Consommation (DH)'].fillna(0)
+
+                        # Graphique à barres empilées : Rendement et Consommation
+                        st.markdown("<h4 style='color: #2c3e50;'>Rendement et Consommation par Engin</h4>", unsafe_allow_html=True)
+                        analysis_df_melted = analysis_df.melt(
+                            id_vars=['Équipement'],
+                            value_vars=['Rendement', 'Consommation (DH)'],
+                            var_name='Métrique',
+                            value_name='Valeur'
+                        )
+                        # Normaliser les valeurs pour l'affichage
+                        max_rendement = analysis_df['Rendement'].max() if analysis_df['Rendement'].max() > 0 else 1
+                        max_consommation = analysis_df['Consommation (DH)'].max() if analysis_df['Consommation (DH)'].max() > 0 else 1
+                        analysis_df_melted['Valeur Normalisée'] = analysis_df_melted.apply(
+                            lambda x: x['Valeur'] / max_rendement if x['Métrique'] == 'Rendement' else x['Valeur'] / max_consommation, axis=1
+                        )
+                        analysis_df_melted['Texte Affichage'] = analysis_df_melted.apply(
+                            lambda x: f"{x['Valeur']:.2f} T/h" if x['Métrique'] == 'Rendement' else f"{x['Valeur']:,.2f} DH", axis=1
+                        )
+
+                        fig_efficiency = px.bar(
+                            analysis_df_melted,
+                            x='Équipement',
+                            y='Valeur Normalisée',
+                            color='Métrique',
+                            barmode='stack',
+                            title='Rendement et Consommation par Engin',
+                            height=500,
+                            text='Texte Affichage'
+                        )
+                        fig_efficiency.update_traces(
+                            textposition='inside',
+                            textfont=dict(size=12)
+                        )
+                        fig_efficiency.update_layout(
+                            xaxis_title="Équipement",
+                            yaxis_title="Valeur Normalisée",
+                            template='plotly_white',
+                            plot_bgcolor='#f5f7fa',
+                            paper_bgcolor='white',
+                            font=dict(
+                                family="Segoe UI, Arial, sans-serif",
+                                size=12,
+                                color="#2c3e50"
+                            ),
+                            title=dict(
+                                x=0.5,
+                                font=dict(size=18, color="#2c3e50")
+                            ),
+                            legend=dict(
+                                orientation="h",
+                                yanchor="bottom",
+                                y=1.02,
+                                xanchor="center",
+                                x=0.5,
+                                bgcolor="white",
+                                bordercolor="#dfe6e9",
+                                borderwidth=1
+                            ),
+                            xaxis={'tickangle': 45}
+                        )
+                        st.plotly_chart(fig_efficiency, use_container_width=True, key="efficiency_vs_consumption")
+
+                        # Graphique de relation : Consommation vs Tonnage
+                        st.markdown("<h4 style='color: #2c3e50;'>Relation entre Consommation et Tonnage</h4>", unsafe_allow_html=True)
+                        relation_df_melted = analysis_df.melt(
+                            id_vars=['Équipement'],
+                            value_vars=['Tonnage Estimé', 'Consommation (DH)'],
+                            var_name='Métrique',
+                            value_name='Valeur'
+                        )
+                        relation_df_melted['Texte Affichage'] = relation_df_melted.apply(
+                            lambda x: f"{x['Valeur']:,.2f} T" if x['Métrique'] == 'Tonnage Estimé' else f"{x['Valeur']:,.2f} DH", axis=1
+                        )
+
+                        fig_relation = px.bar(
+                            relation_df_melted,
+                            x='Équipement',
+                            y='Valeur',
+                            color='Métrique',
+                            barmode='group',
+                            title='Consommation vs Tonnage par Engin',
+                            height=500,
+                            text='Texte Affichage'
+                        )
+                        fig_relation.update_traces(
+                            textposition='auto',
+                            textfont=dict(size=12)
+                        )
+                        fig_relation.update_layout(
+                            xaxis_title="Équipement",
+                            yaxis_title="Valeur",
+                            template='plotly_white',
+                            plot_bgcolor='#f5f7fa',
+                            paper_bgcolor='white',
+                            font=dict(
+                                family="Segoe UI, Arial, sans-serif",
+                                size=12,
+                                color="#2c3e50"
+                            ),
+                            title=dict(
+                                x=0.5,
+                                font=dict(size=18, color="#2c3e50")
+                            ),
+                            legend=dict(
+                                orientation="h",
+                                yanchor="bottom",
+                                y=1.02,
+                                xanchor="center",
+                                x=0.5,
+                                bgcolor="white",
+                                bordercolor="#dfe6e9",
+                                borderwidth=1
+                            ),
+                            xaxis={'tickangle': 45}
+                        )
+                        st.plotly_chart(fig_relation, use_container_width=True, key="consumption_vs_tonnage")
+
+                        # Tableau récapitulatif
+                        st.markdown("<h4 style='color: #2c3e50;'>Tableau des rendements, tonnages et consommations</h4>", unsafe_allow_html=True)
+                        display_analysis_df = analysis_df[['Équipement', 'Catégorie', 'Heures Totales', 'Tonnage Estimé', 'Rendement', 'Consommation (DH)']].copy()
+                        display_analysis_df = display_analysis_df.rename(columns={
+                            'Heures Totales': 'Heures Totales (h)',
+                            'Tonnage Estimé': 'Tonnage Estimé (T)',
+                            'Rendement': 'Rendement (T/h)',
+                            'Consommation (DH)': 'Consommation (DH)'
+                        })
+                        st.dataframe(
+                            display_analysis_df.style.format({
+                                'Heures Totales (h)': '{:,.2f} h',
+                                'Tonnage Estimé (T)': '{:,.2f} T',
+                                'Rendement (T/h)': '{:,.2f} T/h',
+                                'Consommation (DH)': '{:,.2f} DH'
+                            }).set_properties(**{
+                                'background-color': 'white',
+                                'border': '1px solid #dfe6e9',
+                                'text-align': 'center',
+                                'color': '#2c3e50'
+                            }).set_table_styles([
+                                {'selector': 'th', 'props': [('background-color', 'white'), ('color', '#3498db'), ('font-weight', 'bold')]}
+                            ]),
+                            use_container_width=True
+                        )
