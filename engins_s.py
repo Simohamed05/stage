@@ -364,40 +364,28 @@ def load_tonnage_data(uploaded_files=None):
 def load_hm_data(uploaded_files=None):
     try:
         if uploaded_files is None or not uploaded_files:
-            st.warning("Aucun fichier d'heures de marche téléversé. Veuillez importer un ou plusieurs fichiers Excel ou ZIP.")
+            st.warning("Aucun fichier d'heures de marche téléversé.")
             return pd.DataFrame()
 
         dfs = []
-        required_columns = ['ENGINS']  # Assuming 'ENGINS' is the date column
-        max_file_size = 200 * 1024 * 1024  # 200 MB in bytes
-
-        if not isinstance(uploaded_files, (list, tuple)):
-            st.error(f"Erreur : uploaded_files doit être une liste ou un tuple, reçu : {type(uploaded_files)}")
-            return pd.DataFrame()
+        required_columns = ['ENGINS']
+        max_file_size = 200 * 1024 * 1024  # 200 MB
 
         for uploaded_file in uploaded_files:
             if not hasattr(uploaded_file, 'name') or not hasattr(uploaded_file, 'read'):
-                st.warning(f"Élément invalide dans uploaded_files : {type(uploaded_file)}. Cet élément sera ignoré.")
+                st.warning(f"Élément invalide : {type(uploaded_file)}")
                 continue
 
-            st.write(f"Traitement du fichier d'heures de marche : {uploaded_file.name}, Taille : {uploaded_file.size / 1024 / 1024:.2f} Mo, Type : {'ZIP' if uploaded_file.name.endswith('.zip') else 'Excel'}")
             if uploaded_file.size > max_file_size:
-                st.warning(f"Le fichier {uploaded_file.name} dépasse la limite de 200 Mo et sera ignoré.")
+                st.warning(f"Le fichier {uploaded_file.name} dépasse la limite de 200 MB.")
                 continue
-            try:
-                uploaded_file.seek(0)
-            except Exception as e:
-                st.warning(f"Erreur lors de la réinitialisation du pointeur pour {uploaded_file.name} : {str(e)}. Ce fichier sera ignoré.")
-                continue
+            uploaded_file.seek(0)
 
             if uploaded_file.name.endswith('.zip'):
                 try:
                     file_bytes = uploaded_file.read()
                     if not file_bytes:
-                        st.warning(f"Le fichier ZIP {uploaded_file.name} est vide et sera ignoré.")
-                        continue
-                    if not isinstance(file_bytes, bytes):
-                        st.warning(f"Le contenu lu de {uploaded_file.name} n'est pas un objet bytes : {type(file_bytes)}. Ce fichier sera ignoré.")
+                        st.warning(f"Le fichier ZIP {uploaded_file.name} est vide.")
                         continue
                     file_stream = io.BytesIO(file_bytes)
                     with zipfile.ZipFile(file_stream, 'r') as z:
@@ -407,56 +395,55 @@ def load_hm_data(uploaded_files=None):
                                     try:
                                         df = pd.read_excel(f)
                                         if not all(col in df.columns for col in required_columns):
-                                            st.warning(f"Le fichier {filename} dans le ZIP {uploaded_file.name} ne contient pas la colonne requise : {'ENGINS'}. Il sera ignoré.")
+                                            st.warning(f"{filename} manque la colonne 'ENGINS'.")
                                             continue
                                         if pd.api.types.is_numeric_dtype(df['ENGINS']):
-                                            df['ENGINS'] = pd.to_datetime(df['ENGINS'], origin='1899-12-30', unit='D')
+                                            df['ENGINS'] = pd.to_datetime(df['ENGINS'], origin='1899-12-30', unit='D', errors='coerce')
                                         elif not pd.api.types.is_datetime64_any_dtype(df['ENGINS']):
                                             df['ENGINS'] = pd.to_datetime(df['ENGINS'], errors='coerce')
                                         df = df.dropna(subset=required_columns)
-                                        for col in df.columns[1:]:  # Skip ENGINS column
-                                            df[col] = pd.to_numeric(df[col], errors='coerce')
-                                        df['TOTAL_HOURS'] = df.iloc[:, 1:].sum(axis=1)
+                                        for col in df.columns[1:]:
+                                            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).round(0).astype(int)
+                                        df['TOTAL_HOURS'] = df.iloc[:, 1:].sum(axis=1, skipna=True).round(0).astype(int)
                                         dfs.append(df)
                                     except Exception as e:
-                                        st.warning(f"Erreur lors du chargement du fichier {filename} dans le ZIP {uploaded_file.name} : {str(e)}")
+                                        st.warning(f"Erreur dans {filename} : {str(e)}")
                                         continue
                 except zipfile.BadZipFile:
-                    st.warning(f"Le fichier {uploaded_file.name} n'est pas un fichier ZIP valide et sera ignoré.")
+                    st.warning(f"Le fichier {uploaded_file.name} n'est pas un fichier ZIP valide.")
                     continue
                 except Exception as e:
-                    st.warning(f"Erreur lors du traitement du fichier ZIP {uploaded_file.name} : {str(e)}")
+                    st.warning(f"Erreur dans le ZIP {uploaded_file.name} : {str(e)}")
                     continue
             else:
                 try:
                     df = pd.read_excel(uploaded_file)
                     if not all(col in df.columns for col in required_columns):
-                        st.warning(f"Le fichier {uploaded_file.name} ne contient pas la colonne requise : {'ENGINS'}. Il sera ignoré.")
+                        st.warning(f"{uploaded_file.name} manque la colonne 'ENGINS'.")
                         continue
                     if pd.api.types.is_numeric_dtype(df['ENGINS']):
-                        df['ENGINS'] = pd.to_datetime(df['ENGINS'], origin='1899-12-30', unit='D')
+                        df['ENGINS'] = pd.to_datetime(df['ENGINS'], origin='1899-12-30', unit='D', errors='coerce')
                     elif not pd.api.types.is_datetime64_any_dtype(df['ENGINS']):
                         df['ENGINS'] = pd.to_datetime(df['ENGINS'], errors='coerce')
                     df = df.dropna(subset=required_columns)
-                    for col in df.columns[1:]:  # Skip ENGINS column
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
-                    df['TOTAL_HOURS'] = df.iloc[:, 1:].sum(axis=1)
+                    for col in df.columns[1:]:
+                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).round(0).astype(int)
+                    df['TOTAL_HOURS'] = df.iloc[:, 1:].sum(axis=1, skipna=True).round(0).astype(int)
                     dfs.append(df)
                 except Exception as e:
-                    st.warning(f"Erreur lors du chargement du fichier {uploaded_file.name} : {str(e)}. Ce fichier sera ignoré.")
+                    st.warning(f"Erreur dans {uploaded_file.name} : {str(e)}")
                     continue
 
         if not dfs:
-            st.error("Aucun fichier d'heures de marche valide n'a pu être chargé. Veuillez vérifier les fichiers téléversés.")
+            st.error("Aucun fichier d'heures de marche valide chargé.")
             return pd.DataFrame()
 
         combined_df = pd.concat(dfs, ignore_index=True)
         combined_df = combined_df.drop_duplicates()
-
-        st.success(f"{len(dfs)} fichier(s) d'heures de marche valide(s) chargé(s) avec succès. Nombre total de lignes : {combined_df.shape[0]}")
+        st.success(f"{len(dfs)} fichier(s) chargé(s). Lignes totales : {combined_df.shape[0]}")
         return combined_df
     except Exception as e:
-        st.error(f"Erreur générale lors du chargement des fichiers d'heures de marche : {str(e)}")
+        st.error(f"Erreur générale : {str(e)}")
         return pd.DataFrame()
     
 def compute_monthly_costs(data):
@@ -1704,7 +1691,7 @@ else:
                     hm_df = load_hm_data(st.session_state.uploaded_hm_file)
 
         if hm_df.empty:
-            st.warning("Aucune donnée d'heures de marche disponible. Veuillez téléverser un fichier Excel ou ZIP valide.")
+            st.warning("Aucune donnée d'heures de marche disponible.")
         else:
             st.markdown("<h3 style='color: #2c3e50;'>Filtrer par plage de dates</h3>", unsafe_allow_html=True)
             default_hm_start = hm_df['ENGINS'].min().date() if not hm_df.empty else datetime.today().date()
@@ -1722,12 +1709,12 @@ else:
             if len(hm_date_range) == 2:
                 start_date, end_date = hm_date_range
                 filtered_hm_df = filtered_hm_df[
-                    (filtered_hm_df['ENGINS'].dt.date >= start_date) & 
+                    (filtered_hm_df['ENGINS'].dt.date >= start_date) &
                     (filtered_hm_df['ENGINS'].dt.date <= end_date)
                 ]
 
             if filtered_hm_df.empty:
-                st.warning("Aucune donnée d'heures de marche disponible après filtrage. Veuillez ajuster les filtres.")
+                st.warning("Aucune donnée d'heures de marche disponible après filtrage.")
             else:
                 st.markdown("<h3 style='color: #2c3e50;'>Tableau des heures de marche</h3>", unsafe_allow_html=True)
                 equipment_columns = [col for col in filtered_hm_df.columns if col not in ['ENGINS', 'TOTAL_HOURS']]
@@ -1740,13 +1727,29 @@ else:
                 for col in equipment_columns:
                     display_hm_df = display_hm_df.rename(columns={col: f"{col} (h)"})
 
+                # Ensure hours are integers
+                for col in equipment_columns:
+                    display_hm_df[f"{col} (h)"] = display_hm_df[f"{col} (h)"].fillna(0).astype(int)
+                display_hm_df['Total (h)'] = display_hm_df['Total (h)'].fillna(0).astype(int)
+
+                # Calculate totals for each equipment and overall total
                 total_hours = display_hm_df[[f"{col} (h)" for col in equipment_columns]].sum().to_dict()
                 total_sum = display_hm_df['Total (h)'].sum()
 
+                # Create a totals row
+                totals_row = {'Date': 'Total'}
+                for col in equipment_columns:
+                    totals_row[f"{col} (h)"] = int(total_hours[f"{col} (h)"])
+                totals_row['Total (h)'] = int(total_sum)
+                
+                # Append totals row to the DataFrame
+                totals_df = pd.DataFrame([totals_row])
+                display_hm_df = pd.concat([display_hm_df, totals_df], ignore_index=True)
+
                 st.dataframe(
                     display_hm_df.style.format({
-                        **{f"{col} (h)": '{:,.2f} h' for col in equipment_columns},
-                        'Total (h)': '{:,.2f} h',
+                        **{f"{col} (h)": '{:d} h' for col in equipment_columns},  # Integer format
+                        'Total (h)': '{:d} h',  # Integer format
                         'Date': lambda x: x if x else ''
                     }).set_properties(**{
                         'background-color': 'white',
@@ -1754,7 +1757,8 @@ else:
                         'text-align': 'center',
                         'color': '#2c3e50'
                     }).set_table_styles([
-                        {'selector': 'th', 'props': [('background-color', 'white'), ('color', '#3498db'), ('font-weight', 'bold')]}
+                        {'selector': 'th', 'props': [('background-color', 'white'), ('color', '#3498db'), ('font-weight', 'bold')]},
+                        {'selector': 'tr:last-child', 'props': [('background-color', '#f0f2f6'), ('font-weight', 'bold')]}  # Highlight totals row
                     ]),
                     height=600,
                     use_container_width=True
@@ -1763,12 +1767,12 @@ else:
                 st.markdown(f"""
                 <div style='background-color: white; padding:10px; border-radius:10px; margin-top:10px; border: 1px solid #dfe6e9;'>
                     <p style='color: #2c3e50; font-size:16px; font-weight:bold; text-align:right;'>
-                        {', '.join([f"Total {col}: {total_hours[f'{col} (h)']:,.2f} h" for col in equipment_columns])}
-                        | Total Cumulé: {total_sum:,.2f} h
+                        Total Cumulé: {total_sum:d} h
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
 
+                
                 # Changement dans la section des heures de marche, pour le graphique "Comparaison des heures de marche par équipement"
                 # Changement dans la section des heures de marche, pour le graphique "Comparaison des heures de marche par équipement"
                 # Changement dans la section des heures de marche, pour le graphique "Rendement des engins et relation avec la consommation"
