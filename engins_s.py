@@ -635,9 +635,61 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
                 doc.add_heading('Tonnage total par site', level=2)
                 img_bytes = pio.to_image(figures["Tonnage total par site"], format='png', scale=1)
                 doc.add_picture(BytesIO(img_bytes), width=Inches(6))
-    doc.add_heading('7. Analyse des Heures de Marche', level=1)
-    doc.add_paragraph('Cette section présente les données des heures de marche pour les équipements miniers.')
-    
+
+        doc.add_heading('7. Analyse des Heures de Marche', level=1)
+        doc.add_paragraph('Cette section présente les données des heures de marche pour les équipements miniers.')
+        
+        if not hm_df.empty:
+            filtered_hm_df = hm_df.copy()
+            if hm_date_range is not None and len(hm_date_range) == 2:
+                start_date, end_date = hm_date_range
+                filtered_hm_df = filtered_hm_df[
+                    (filtered_hm_df['ENGINS'].dt.date >= start_date) & 
+                    (filtered_hm_df['ENGINS'].dt.date <= end_date)
+                ]
+            else:
+                doc.add_paragraph("Plage de dates non définie pour les heures de marche. Affichage de toutes les données disponibles.")
+            if not filtered_hm_df.empty:
+                doc.add_heading('Tableau des heures de marche', level=2)
+                max_rows = min(filtered_hm_df.shape[0], 100)
+                equipment_columns = [col for col in filtered_hm_df.columns if col not in ['ENGINS', 'TOTAL_HOURS']]
+                table = doc.add_table(rows=max_rows+2, cols=len(equipment_columns)+2)
+                table.style = 'Table Grid'
+                
+                table_rows = table.rows
+                headers = ['Date'] + equipment_columns + ['Total (h)']
+                for j, col in enumerate(headers):
+                    table_rows[0].cells[j].text = col
+                
+                display_hm_df = filtered_hm_df[['ENGINS'] + equipment_columns + ['TOTAL_HOURS']].copy()
+                display_hm_df['ENGINS'] = display_hm_df['ENGINS'].dt.strftime('%d/%m/%Y')
+                
+                for i in range(max_rows):
+                    row_cells = table_rows[i+1].cells
+                    for j, value in enumerate(display_hm_df.iloc[i]):
+                        row_cells[j].text = str(value) if j == 0 else f"{value:,.2f} h"
+                
+                total_hours = display_hm_df[equipment_columns].sum().to_dict()
+                total_sum = display_hm_df['TOTAL_HOURS'].sum()
+                table_rows[max_rows+1].cells[0].text = 'Total'
+                for j, col in enumerate(equipment_columns, 1):
+                    table_rows[max_rows+1].cells[j].text = f"{total_hours[col]:,.2f} h"
+                table_rows[max_rows+1].cells[-1].text = f"{total_sum:,.2f} h"
+                
+                if "Comparaison des heures de marche par équipement" in figures:
+                    doc.add_heading('Comparaison des heures de marche par équipement', level=2)
+                    img_bytes = pio.to_image(figures["Comparaison des heures de marche par équipement"], format='png', scale=1)
+                    doc.add_picture(BytesIO(img_bytes), width=Inches(6))
+                
+                if "Heures totales par équipement" in figures:
+                    doc.add_heading('Heures totales par équipement', level=2)
+                    img_bytes = pio.to_image(figures["Heures totales par équipement"], format='png', scale=1)
+                    doc.add_picture(BytesIO(img_bytes), width=Inches(6))
+        else:
+            doc.add_paragraph("Aucune donnée d'heures de marche disponible pour la période sélectionnée.")
+        doc.add_heading('7. Analyse des Heures de Marche', level=1)
+    doc.add_paragraph('Cette section présente les données des heures de marche pour les équipements miniers, incluant les totaux cumulés, ainsi qu’une analyse de rentabilité basée sur le rendement moyen (tonnes par heure) et le coût par tonne (DH par tonne).')
+
     if not hm_df.empty:
         filtered_hm_df = hm_df.copy()
         if hm_date_range is not None and len(hm_date_range) == 2:
@@ -648,45 +700,90 @@ def generate_word_report(filtered_data, total_cost, global_avg, category_stats, 
             ]
         else:
             doc.add_paragraph("Plage de dates non définie pour les heures de marche. Affichage de toutes les données disponibles.")
+        
         if not filtered_hm_df.empty:
-            doc.add_heading('Tableau des heures de marche', level=2)
-            max_rows = min(filtered_hm_df.shape[0], 100)
-            equipment_columns = [col for col in filtered_hm_df.columns if col not in ['ENGINS', 'TOTAL_HOURS']]
-            table = doc.add_table(rows=max_rows+2, cols=len(equipment_columns)+2)
-            table.style = 'Table Grid'
             
-            table_rows = table.rows
-            headers = ['Date'] + equipment_columns + ['Total (h)']
-            for j, col in enumerate(headers):
-                table_rows[0].cells[j].text = col
             
-            display_hm_df = filtered_hm_df[['ENGINS'] + equipment_columns + ['TOTAL_HOURS']].copy()
-            display_hm_df['ENGINS'] = display_hm_df['ENGINS'].dt.strftime('%d/%m/%Y')
+            doc.add_heading('Totaux pour la période sélectionnée', level=2)
+            filtered_data_df = filtered_data.copy()
+            if date_range is not None and len(date_range) == 2:
+                start_date, end_date = date_range
+                filtered_data_df = filtered_data_df[
+                    (filtered_data_df['Date'].dt.date >= start_date) &
+                    (filtered_data_df['Date'].dt.date <= end_date)
+                ]
             
-            for i in range(max_rows):
-                row_cells = table_rows[i+1].cells
-                for j, value in enumerate(display_hm_df.iloc[i]):
-                    row_cells[j].text = str(value) if j == 0 else f"{value:,.2f} h"
+            filtered_tonnage_df = tonnage_df.copy()
+            if tonnage_date_range is not None and len(tonnage_date_range) == 2:
+                start_date, end_date = tonnage_date_range
+                filtered_tonnage_df = filtered_tonnage_df[
+                    (filtered_tonnage_df['DATE'].dt.date >= start_date) &
+                    (filtered_tonnage_df['DATE'].dt.date <= end_date)
+                ]
             
-            total_hours = display_hm_df[equipment_columns].sum().to_dict()
-            total_sum = display_hm_df['TOTAL_HOURS'].sum()
-            table_rows[max_rows+1].cells[0].text = 'Total'
-            for j, col in enumerate(equipment_columns, 1):
-                table_rows[max_rows+1].cells[j].text = f"{total_hours[col]:,.2f} h"
-            table_rows[max_rows+1].cells[-1].text = f"{total_sum:,.2f} h"
+            total_consumption = filtered_data_df['Montant'].sum() if not filtered_data_df.empty else 0
+            total_tonnage = filtered_tonnage_df['CUMMULE'].sum() if not filtered_tonnage_df.empty else 0
+            total_hours = filtered_hm_df['TOTAL_HOURS'].sum() if not filtered_hm_df.empty else 0
             
-            if "Comparaison des heures de marche par équipement" in figures:
-                doc.add_heading('Comparaison des heures de marche par équipement', level=2)
-                img_bytes = pio.to_image(figures["Comparaison des heures de marche par équipement"], format='png', scale=1)
-                doc.add_picture(BytesIO(img_bytes), width=Inches(6))
+            table = doc.add_table(rows=4, cols=2)
+            table.style = 'LightShading'
+            table.cell(0, 0).text = 'Indicateur'
+            table.cell(0, 1).text = 'Valeur'
+            table.cell(1, 0).text = 'Consommation totale'
+            table.cell(1, 1).text = f"{total_consumption:,.2f} DH"
+            table.cell(2, 0).text = 'Tonnage total'
+            table.cell(2, 1).text = f"{total_tonnage:,.2f} T"
+            table.cell(3, 0).text = 'Heures totales'
+            table.cell(3, 1).text = f"{total_hours:d} h"
             
-            if "Heures totales par équipement" in figures:
-                doc.add_heading('Heures totales par équipement', level=2)
-                img_bytes = pio.to_image(figures["Heures totales par équipement"], format='png', scale=1)
-                doc.add_picture(BytesIO(img_bytes), width=Inches(6))
+            doc.add_heading('Analyse de rentabilité', level=2)
+            if total_tonnage == 0 or total_hours == 0 or total_consumption == 0:
+                doc.add_paragraph("Données insuffisantes pour réaliser l’analyse de rentabilité. Veuillez vérifier que les fichiers de consommation, de tonnage et d’heures de marche sont chargés pour la période sélectionnée.")
+            else:
+                average_yield = total_tonnage / total_hours if total_hours > 0 else 0
+                cost_per_tonne = total_consumption / total_tonnage if total_tonnage > 0 else float('inf')
+                YIELD_THRESHOLD = 10  # Tonnes par heure minimum
+                COST_PER_TONNE_THRESHOLD = 500  # Coût maximum par tonne en DH
+                
+                table = doc.add_table(rows=3, cols=2)
+                table.style = 'LightShading'
+                table.cell(0, 0).text = 'Indicateur'
+                table.cell(0, 1).text = 'Valeur'
+                table.cell(1, 0).text = 'Rendement moyen'
+                table.cell(1, 1).text = f"{average_yield:.2f} T/h"
+                table.cell(2, 0).text = 'Coût par tonne'
+                table.cell(2, 1).text = f"{cost_per_tonne:.2f} DH/T"
+                
+                if average_yield >= YIELD_THRESHOLD and cost_per_tonne <= COST_PER_TONNE_THRESHOLD:
+                    doc.add_heading('Résultat : Opération Gagnante ✅', level=3)
+                    doc.add_paragraph(
+                        f"Le rendement moyen ({average_yield:.2f} T/h) est supérieur au seuil de {YIELD_THRESHOLD:.2f} T/h, "
+                        f"et le coût par tonne ({cost_per_tonne:.2f} DH/T) est inférieur au seuil de {COST_PER_TONNE_THRESHOLD:.2f} DH/T. "
+                        "L’opération est efficace et rentable."
+                    )
+                else:
+                    doc.add_heading('Résultat : Opération Perdante ❌', level=3)
+                    reasons = []
+                    if average_yield < YIELD_THRESHOLD:
+                        reasons.append(f"Le rendement moyen ({average_yield:.2f} T/h) est inférieur au seuil de {YIELD_THRESHOLD:.2f} T/h.")
+                    if cost_per_tonne > COST_PER_TONNE_THRESHOLD:
+                        reasons.append(f"Le coût par tonne ({cost_per_tonne:.2f} DH/T) dépasse le seuil de {COST_PER_TONNE_THRESHOLD:.2f} DH/T.")
+                    
+                    doc.add_paragraph("L’opération présente des inefficacités :")
+                    for reason in reasons:
+                        doc.add_paragraph(reason, style='ListBullet')
+                    
+                    doc.add_heading('Recommandations', level=4)
+                    recommendations = [
+                        "Optimiser l’utilisation des équipements pour augmenter le rendement horaire.",
+                        "Réduire les coûts d’exploitation en négociant les prix des pièces ou en améliorant la maintenance préventive.",
+                        "Analyser les équipements spécifiques pour identifier les sources de surconsommation."
+                    ]
+                    for rec in recommendations:
+                        doc.add_paragraph(rec, style='ListBullet')
     else:
         doc.add_paragraph("Aucune donnée d'heures de marche disponible pour la période sélectionnée.")
-    
+
     doc.add_heading('Conclusion', level=1)
     doc.add_paragraph(
         "Ce rapport fournit une analyse complète des coûts de consommation des équipements miniers, des tonnages des sites, "
@@ -821,28 +918,30 @@ else:
         st.markdown("""
         <div class='analysis-card'>
             <h2 style='color: #2c3e50; margin-top:0;'>Bienvenue dans le Tableau de Bord de Gestion des Équipements Miniers</h2>
-            <p style='color: #7f8c8d; font-size:16px;'>Ce tableau de bord interactif vous permet d'analyser et optimiser la consommation des équipements miniers ainsi que les données de tonnage des sites. Découvrez ci-dessous les principales fonctionnalités :</p>
+            <p style='color: #7f8c8d; font-size:16px;'>Ce tableau de bord interactif vous permet d'analyser et d'optimiser la consommation, les tonnages et les heures de marche des équipements miniers. Découvrez ci-dessous les principales fonctionnalités :</p>
             <h3 style='color: #3498db; margin-top:20px;'>Fonctionnalités principales :</h3>
             <ul style='color: #2c3e50;'>
                 <li><strong>Analyse des Coûts par Catégorie et Équipement :</strong> Visualisez les coûts totaux et moyens par catégorie (Dumper, Foration, 10 Tonnes) et par équipement spécifique. Identifiez rapidement les équipements ou catégories où des optimisations sont possibles.</li>
                 <li><strong>Filtrage Interactif des Données :</strong> Appliquez des filtres par dates, équipements ou type de consommation pour explorer les données pertinentes. Les tableaux et graphiques se mettent à jour dynamiquement.</li>
                 <li><strong>Comparaison des Performances :</strong> Comparez les coûts entre différentes catégories ou équipements pour détecter les anomalies et identifier les opportunités d'optimisation.</li>
-                <li><strong>Analyse des Tonnes par Sites :</strong> Visualisez les tendances au fil du temps et les totaux par site pour évaluer les performances des sites DS Sud, DS Nord et KA.</li>
-                <li><strong>Génération de Rapports Détailés :</strong> Exportez un rapport Word complet incluant des tableaux, graphiques et recommandations personnalisées pour une analyse approfondie et un partage facile.</li>
+                <li><strong>Analyse des Tonnages par Sites :</strong> Visualisez les tendances au fil du temps et les totaux par site (DS Sud, DS Nord, KA) pour évaluer les performances de production.</li>
+                <li><strong>Analyse des Heures de Marche :</strong> Examinez les heures de fonctionnement des équipements avec des totaux cumulés. Évaluez la rentabilité grâce à des indicateurs comme le rendement moyen (tonnes/heure) et le coût par tonne (DH/tonne), avec une analyse indiquant si l'opération est gagnante ou perdante.</li>
+                <li><strong>Génération de Rapports Détailés :</strong> Exportez un rapport Word complet incluant des tableaux, graphiques, indicateurs de rentabilité et recommandations personnalisées pour une analyse approfondie et un partage facile.</li>
                 <li><strong>Recommandations Actionnables :</strong> Recevez des recommandations basées sur les données pour réduire les coûts, améliorer la maintenance préventive et optimiser l'utilisation des équipements.</li>
             </ul>
             <h3 style='color: #3498db; margin-top:20px;'>Comment commencer :</h3>
             <ol style='color: #2c3e50;'>
-                <li>Utilisez le panneau latéral gauche pour importer vos fichiers de consommation et de tonnage.</li>
+                <li>Utilisez le panneau latéral gauche pour importer vos fichiers de consommation, de tonnage et d'heures de marche.</li>
                 <li>Les fichiers doivent être au format Excel (.xlsx) ou ZIP (.zip).</li>
                 <li>Pour les consommations, les colonnes requises sont : <code>Date</code>, <code>CATEGORIE</code>, <code>Desc_Cat</code>, <code>Desc_CA</code>, <code>Montant</code>.</li>
                 <li>Pour les tonnages, les colonnes requises sont : <code>DATE</code>, <code>DS Sud</code>, <code>DS Nord</code>, <code>KA</code>.</li>
+                <li>Pour les heures de marche, la colonne requise est : <code>ENGINS</code> (dates), avec des colonnes supplémentaires pour chaque équipement (heures).</li>
                 <li>Une fois les fichiers chargés, les analyses seront automatiquement disponibles.</li>
             </ol>
             <div style='background-color: #e3f2fd; padding: 15px; border-radius: 8px; margin-top: 20px;'>
                 <h4 style='color: #1565c0; margin-top:0;'>Conseil :</h4>
                 <p style='color: #1565c0;'>
-                    Pour une analyse optimale, importez d'abord les fichiers de consommation puis les fichiers de tonnage. Cela permettra de générer des rapports complets avec toutes les données.
+                    Pour une analyse complète, importez les fichiers de consommation, de tonnage et d'heures de marche. Cela permettra de générer des rapports détaillés incluant l'analyse de rentabilité basée sur le rendement et le coût par tonne.
                 </p>
             </div>
         </div>
