@@ -839,7 +839,19 @@ if not st.session_state.logged_in:
     <div class='header-container'>
         <h1 style='color: white; text-align:center; margin-top:0;'>Bienvenue</h1>
         <p style='color: white; text-align:center;'>Veuillez vous connecter ou créer un compte pour accéder au tableau de bord</p>
-    </div>
+    <style>
+    /* Style spécifique pour la page de connexion */
+    .stApp { 
+        background-image: url('https://img.freepik.com/premium-photo/blue-white-abstract-background-with-flowing-particles_916626-5365.jpg');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        position: relative;
+        min-height: 100vh;
+    }
+    
+    }
+    </style>
     """, unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
