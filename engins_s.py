@@ -1266,7 +1266,7 @@ else:
                 st.success("Rapport généré avec succès!")
     st.markdown("""
     <div class='header-container'>
-        <h1 style='color: white; text-align:center; margin-top:0;'>📊 Tableau De Bord De La Consommation Des Engins</h1>
+        <h1 style='color: white; text-align:center; margin-top:0;'>Tableau De Bord De La Consommation Des Engins</h1>
         <p style='color: white; text-align: center; margin-bottom:0'>Suivre et optimiser la consommation des équipements</p>
     </div>
     """, unsafe_allow_html=True)
