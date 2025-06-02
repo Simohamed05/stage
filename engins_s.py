@@ -354,6 +354,7 @@ def load_tonnage_data(uploaded_files=None):
             return pd.DataFrame()
         
         combined_df = pd.concat(dfs, ignore_index=True)
+        combined_df = combined_df.drop_duplicates()
         
         st.success(f"{len(dfs)} fichier(s) de tonnage valide(s) chargé(s) avec succès. Nombre total de lignes : {combined_df.shape[0]}")
         return combined_df
@@ -438,6 +439,7 @@ def load_hm_data(uploaded_files=None):
             return pd.DataFrame()
 
         combined_df = pd.concat(dfs, ignore_index=True)
+        combined_df = combined_df.drop_duplicates()
         st.success(f"{len(dfs)} fichier(s) chargé(s). Lignes totales : {combined_df.shape[0]}")
         return combined_df
     except Exception as e:
