@@ -354,7 +354,6 @@ def load_tonnage_data(uploaded_files=None):
             return pd.DataFrame()
         
         combined_df = pd.concat(dfs, ignore_index=True)
-        combined_df = combined_df.drop_duplicates()
         
         st.success(f"{len(dfs)} fichier(s) de tonnage valide(s) chargé(s) avec succès. Nombre total de lignes : {combined_df.shape[0]}")
         return combined_df
@@ -439,7 +438,6 @@ def load_hm_data(uploaded_files=None):
             return pd.DataFrame()
 
         combined_df = pd.concat(dfs, ignore_index=True)
-        combined_df = combined_df.drop_duplicates()
         st.success(f"{len(dfs)} fichier(s) chargé(s). Lignes totales : {combined_df.shape[0]}")
         return combined_df
     except Exception as e:
@@ -992,6 +990,7 @@ else:
                 df = load_data(st.session_state.uploaded_file)
 
         if df.empty:
+            st.write(' les données sont incorrect vérifier les noms des colonnes.')
             st.stop()
         
         st.subheader("Filtres")
@@ -1894,22 +1893,38 @@ else:
                         (filtered_data_df['Date'].dt.date >= start_date) &
                         (filtered_data_df['Date'].dt.date <= end_date)
                     ]
+                    consumption_period = f"du {start_date.strftime('%d/%m/%Y')} au {end_date.strftime('%d/%m/%Y')}"
+                else:
+                    consumption_period = "Toutes les dates disponibles"
                 
                 # Filtrer les données de tonnage
-                tonnage_df = load_tonnage_data(st.session_state.uploaded_tonnage_file)
                 filtered_tonnage_df = tonnage_df.copy()
-                if len(st.session_state['tonnage_date_range']) == 2:
-                    start_date, end_date = st.session_state['tonnage_date_range']
+                if len(tonnage_date_range) == 2:
+                    start_date, end_date = tonnage_date_range
                     filtered_tonnage_df = filtered_tonnage_df[
                         (filtered_tonnage_df['DATE'].dt.date >= start_date) &
                         (filtered_tonnage_df['DATE'].dt.date <= end_date)
                     ]
-
+                    tonnage_period = f"du {start_date.strftime('%d/%m/%Y')} au {end_date.strftime('%d/%m/%Y')}"
+                else:
+                    tonnage_period = "Toutes les dates disponibles"
+                
+                # Filtrer les données d'heures de marche
+                filtered_hm_df = hm_df.copy()
+                if len(hm_date_range) == 2:
+                    start_date, end_date = hm_date_range
+                    filtered_hm_df = filtered_hm_df[
+                        (filtered_hm_df['ENGINS'].dt.date >= start_date) &
+                        (filtered_hm_df['ENGINS'].dt.date <= end_date)
+                    ]
+                    hm_period = f"du {start_date.strftime('%d/%m/%Y')} au {end_date.strftime('%d/%m/%Y')}"
+                else:
+                    hm_period = "Toutes les dates disponibles"
+                
                 # Calcul des totaux
                 total_consumption = filtered_data_df['Montant'].sum() if not filtered_data_df.empty else 0
                 total_tonnage = filtered_tonnage_df['CUMMULE'].sum() if not filtered_tonnage_df.empty else 0
                 total_hours = filtered_hm_df['TOTAL_HOURS'].sum() if not filtered_hm_df.empty else 0
-
                 # Affichage des totaux
                 st.markdown(f"""
                 <div class='analysis-card'>
