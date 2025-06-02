@@ -1763,6 +1763,7 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
+        # Importation des fichiers d'heures de marche
         st.markdown("<h3 style='color: #2c3e50;'>Importer des fichiers d'heures de marche</h3>", unsafe_allow_html=True)
         st.markdown("**Note** : Plusieurs fichiers Excel (.xlsx) ou ZIP (.zip) peuvent être importés (max 200 Mo par fichier).")
         st.markdown("**Fichiers importés** :")
@@ -1803,8 +1804,9 @@ else:
                     hm_df = load_hm_data(st.session_state.uploaded_hm_file)
 
         if hm_df.empty:
-            st.warning("Aucune donnée d'heures de marche disponible.")
+            st.warning("Aucune donnée d'heures de marche disponible. Veuillez téléverser un fichier Excel ou ZIP valide.")
         else:
+            # Filtrage par plage de dates pour les heures de marche
             st.markdown("<h3 style='color: #2c3e50;'>Filtrer par plage de dates</h3>", unsafe_allow_html=True)
             default_hm_start = hm_df['ENGINS'].min().date() if not hm_df.empty else datetime.today().date()
             default_hm_end = hm_df['ENGINS'].max().date() if not hm_df.empty else datetime.today().date()
@@ -1824,6 +1826,9 @@ else:
                     (filtered_hm_df['ENGINS'].dt.date >= start_date) &
                     (filtered_hm_df['ENGINS'].dt.date <= end_date)
                 ]
+                hm_period = f"du {start_date.strftime('%d/%m/%Y')} au {end_date.strftime('%d/%m/%Y')}"
+            else:
+                hm_period = "Toutes les dates disponibles"
 
             if filtered_hm_df.empty:
                 st.warning("Aucune donnée d'heures de marche disponible après filtrage.")
@@ -1885,8 +1890,8 @@ else:
                 """, unsafe_allow_html=True)
 
                 # Calcul des totaux pour la période sélectionnée
-                st.markdown("<h3 style='color: #2c3e50;'>Totaux pour la période sélectionnée</h3>", unsafe_allow_html=True)
-                
+                st.markdown("<h3 style='color: #2c3e50;'>Résumé des totaux pour la période sélectionnée</h3>", unsafe_allow_html=True)
+
                 # Filtrer les données de consommation
                 filtered_data_df = filtered_data.copy()
                 if len(date_range) == 2:
@@ -1898,7 +1903,7 @@ else:
                     consumption_period = f"du {start_date.strftime('%d/%m/%Y')} au {end_date.strftime('%d/%m/%Y')}"
                 else:
                     consumption_period = "Toutes les dates disponibles"
-                
+
                 # Filtrer les données de tonnage
                 filtered_tonnage_df = tonnage_df.copy()
                 if len(tonnage_date_range) == 2:
@@ -1910,39 +1915,28 @@ else:
                     tonnage_period = f"du {start_date.strftime('%d/%m/%Y')} au {end_date.strftime('%d/%m/%Y')}"
                 else:
                     tonnage_period = "Toutes les dates disponibles"
-                
-                # Filtrer les données d'heures de marche
-                filtered_hm_df = hm_df.copy()
-                if len(hm_date_range) == 2:
-                    start_date, end_date = hm_date_range
-                    filtered_hm_df = filtered_hm_df[
-                        (filtered_hm_df['ENGINS'].dt.date >= start_date) &
-                        (filtered_hm_df['ENGINS'].dt.date <= end_date)
-                    ]
-                    hm_period = f"du {start_date.strftime('%d/%m/%Y')} au {end_date.strftime('%d/%m/%Y')}"
-                else:
-                    hm_period = "Toutes les dates disponibles"
-                
+
                 # Calcul des totaux
                 total_consumption = filtered_data_df['Montant'].sum() if not filtered_data_df.empty else 0
                 total_tonnage = filtered_tonnage_df['CUMMULE'].sum() if not filtered_tonnage_df.empty else 0
                 total_hours = filtered_hm_df['TOTAL_HOURS'].sum() if not filtered_hm_df.empty else 0
-                # Affichage des totaux
+
+                # Affichage des totaux avec période
                 st.markdown(f"""
                 <div class='analysis-card'>
                     <h4 style='color: #2c3e50;'>Résumé des totaux</h4>
                     <div style='display:flex; justify-content:space-between;'>
                         <div class='metric-card'>
-                            <p class='metric-title'>Consommation Totale</p>
+                            <p class='metric-title'>Consommation Totale ({consumption_period})</p>
                             <p class='metric-value'>{total_consumption:,.2f} DH</p>
                         </div>
                         <div class='metric-card'>
-                            <p class='metric-title'>Tonnage Total</p>
+                            <p class='metric-title'>Tonnage Total ({tonnage_period})</p>
                             <p class='metric-value'>{total_tonnage:,.2f} T</p>
                         </div>
                         <div class='metric-card'>
-                            <p class='metric-title'>Heures Totales</p>
-                            <p class='metric-value'>{total_hours:d} h</p>
+                            <p class='metric-title'>Heures Totales ({hm_period})</p>
+                            <p class='metric-value'>{total_hours:,.0f} h</p>
                         </div>
                     </div>
                 </div>
